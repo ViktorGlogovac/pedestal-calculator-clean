@@ -1,20 +1,11 @@
 /**
- * Sketch analysis route — fully deterministic pipeline, no LLM.
+ * Sketch analysis route.
  *
- * POST /api/sketch/analyze
- *
- * 11-stage pipeline:
- *   1.  Ingest         — upload + session ID
- *   2.  Preprocess     — adaptive threshold, morph close, deskew
- *   3.  Text Detect    — Tesseract.js bounding boxes + text mask
- *   4.  OCR Local      — Tesseract.js + construction unit parser
- *   5.  CV Extract     — HoughLinesP with text mask suppression
- *   6.  Segment Classify — rule-based structural / dimension / noise labels
- *   7.  Line Graph     — build graph from structural_boundary segments only
- *   8.  Candidate Gen  — enumerate closed orthogonal face polygons
- *   9.  Score          — deterministic scoring (no LLM)
- *  10.  Normalize + Associate — snap vertices, attach labels deterministically
- *  11.  Finalize + Debug overlays
+ * POST /api/sketch/analyze now uses the simple Codex CLI image path for the
+ * main shape: upload image → Codex returns a clockwise orthogonal walk → build
+ * the existing deckPlan/canvasShapes response. The legacy CV/OCR helpers remain
+ * in this file for older utilities/debug code, but the analyze response returns
+ * before those stages run.
  *
  * GET /api/sketch/debug/:sessionId
  */
@@ -51,9 +42,12 @@ const debugStore = new Map()   // Last 50 sessions
 
 // ─── POST /api/sketch/analyze ─────────────────────────────────────────────────
 
-router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'depthImage', maxCount: 1 }]), async (req, res) => {
+router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'depthImage', maxCount: 1 }]), (req, res, next) => {
+  (async () => {
+  const startedAt = Date.now()
   const warnings = []
   const userNotes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : ''
+  console.log(`[sketch] /analyze start files=${Object.keys(req.files || {}).join(',') || 'none'}`)
 
   // ── Stage 1: Ingest ───────────────────────────────────────────────────────
   let ingestResult
@@ -91,59 +85,56 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
   const imgH = preprocessResult.height || 600
   const imgPath = preprocessResult.preprocessedPath
 
-  // ── GPT-4o Primary Analysis ───────────────────────────────────────────────
-  // Single GPT-4o call extracts both the deck shape (as a perimeter walk) and
-  // all dimension labels.  The walk is converted to polygon coordinates by
-  // deterministic JS code — no LLM simplification.  The CV pipeline below
-  // runs only as a fallback when this call fails or returns an invalid shape.
-  //
-  let gpt4oResult = null
+  // ── Simple Codex CLI Analysis ─────────────────────────────────────────────
+  // One image call returns one clockwise orthogonal walk.  No OCR/CV/fallback
+  // path is used for the main shape.
+  let codexResult = null
   try {
-    gpt4oResult = await analyzeSketch(originalPath, userNotes)
-    debugData.stages.gpt4oAnalysis = {
-      corners: gpt4oResult.outerBoundary.length,
-      unit: gpt4oResult.unit,
-      labelCount: gpt4oResult.ocrItems.length,
+    codexResult = await analyzeSketch(originalPath, userNotes)
+    debugData.stages.codexAnalysis = {
+      corners: codexResult.outerBoundary.length,
+      unit: codexResult.unit,
+      segmentCount: codexResult.segments.length,
       imageSource: 'original',
     }
+    warnings.push(...(codexResult.warnings || []))
     warnings.push(
-      `GPT-4o analysis (original image): ` +
-      `${gpt4oResult.outerBoundary.length} corners, ${gpt4oResult.ocrItems.length} labels, unit=${gpt4oResult.unit}`
+      `Codex CLI analysis (original image): ` +
+      `${codexResult.outerBoundary.length} corners, ${codexResult.segments.length} segments, unit=${codexResult.unit}`
+    )
+    console.log(
+      `[sketch] Codex complete in ${Date.now() - startedAt}ms: ` +
+      `${codexResult.outerBoundary.length} corners, ${codexResult.segments.length} segments`
     )
   } catch (err) {
-    warnings.push(`GPT-4o analysis failed: ${err.message} — falling back to CV pipeline`)
-    debugData.stages.gpt4oAnalysis = { error: err.message }
+    warnings.push(`Codex CLI analysis failed: ${err.message}`)
+    debugData.stages.codexAnalysis = { error: err.message }
+    console.warn(`[sketch] /analyze failed in ${Date.now() - startedAt}ms: ${err.message}`)
+    return res.status(422).json({
+      success: false,
+      sessionId,
+      error: err.message,
+      debugImages: debugData.debugImages,
+      warnings,
+    })
   }
 
-  // Pure multimodal path: if the verified model result is valid, use it
-  // directly. Keep the CV pipeline below only as a fallback when the model
-  // path fails completely.
-  if (gpt4oResult && gpt4oResult.outerBoundary.length >= 4) {
-    const segments = gpt4oResult.outerBoundary.map((pt, i) => {
-      const next = gpt4oResult.outerBoundary[(i + 1) % gpt4oResult.outerBoundary.length]
-      return {
-        id: `s${i + 1}`,
-        start: pt,
-        end: next,
-        geometricLength: +Math.hypot(next.x - pt.x, next.y - pt.y).toFixed(4),
-        lengthLabel: null,
-        inferred: true,
-        confidence: 0.8,
-      }
-    })
-
-    const enrichedSegments = associateVisionLabels(
-      gpt4oResult.ocrItems,
-      segments,
-      gpt4oResult.unit
+  if (codexResult && codexResult.outerBoundary.length >= 4) {
+    const orthogonalBoundary = orthogonalizeMostlyAxisAlignedPoints(
+      codexResult.outerBoundary,
+      warnings,
+      'Codex CLI primary'
     )
+    codexResult.outerBoundary = orthogonalBoundary
+
+    const segments = rebuildSegmentsForBoundary(codexResult.segments, codexResult.outerBoundary)
 
     // ── Optional: depth image ─────────────────────────────────────────────
     let depthPoints = []
     const depthFile = req.files?.['depthImage']?.[0]
     if (depthFile) {
       try {
-        depthPoints = await analyzeDepths(depthFile.path, gpt4oResult.outerBoundary, gpt4oResult.unit)
+        depthPoints = await analyzeDepths(depthFile.path, codexResult.outerBoundary, codexResult.unit)
         warnings.push(`Depth image analyzed: ${depthPoints.length} depth point${depthPoints.length !== 1 ? 's' : ''} extracted`)
       } catch (err) {
         warnings.push(`Depth image analysis failed: ${err.message}`)
@@ -151,12 +142,12 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
     }
 
     const deckPlan = {
-      unit: gpt4oResult.unit,
-      outerBoundary: gpt4oResult.outerBoundary,
+      unit: codexResult.unit,
+      outerBoundary: codexResult.outerBoundary,
       cutouts: [],
-      segments: enrichedSegments,
+      segments,
       depthPoints,
-      notes: [{ text: 'Shape extracted by pure multimodal model', confidence: 0.85 }],
+      notes: [{ text: 'Shape extracted by simple Codex CLI image analysis', confidence: 0.85 }],
       confidence: 0.82,
       _alreadyScaled: true,
       allWarnings: warnings,
@@ -172,14 +163,14 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
       detectedLines: [],
       detectedTextRegions: [],
       candidatePolygons: [],
-      ocrItems: gpt4oResult.ocrItems,
+      ocrItems: [],
       classifiedSegments: [],
       graph: { nodeCount: 0, edgeCount: 0 },
     })
 
     debugStore.set(sessionId, {
       ...debugData,
-      ocrItems: gpt4oResult.ocrItems,
+      ocrItems: [],
       deckPlan,
       canvasShapes,
       warnings,
@@ -188,6 +179,7 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
     })
     if (debugStore.size > 50) debugStore.delete(debugStore.keys().next().value)
 
+    console.log(`[sketch] /analyze success in ${Date.now() - startedAt}ms`)
     return res.json({
       success: true,
       sessionId,
@@ -210,6 +202,14 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
     })
   }
 
+  return res.status(422).json({
+    success: false,
+    sessionId,
+    error: 'Codex CLI did not return a usable polygon.',
+    debugImages: debugData.debugImages,
+    warnings,
+  })
+
   // ── Stage 3: Text Detect ─────────────────────────────────────────────────
   let textResult = { textBoxes: [], maskPath: null }
   try {
@@ -230,7 +230,7 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
   // ── Stage 4: OCR ─────────────────────────────────────────────────────────
   // OCR sources:
   //   1. pytesseract (server-side Python, PSM 11 sparse-text mode)
-  //   2. GPT-4o Vision
+    //   2. Codex CLI vision
   // We merge them because local OCR can catch some clean labels while vision is
   // much better on handwritten/rotated notes. Using only one source is too brittle.
   let ocrItems = []
@@ -518,7 +518,10 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
   // ── Stage 11: Finalize ────────────────────────────────────────────────────
   let canvasShapes = []
   try {
-    if (deckPlan) canvasShapes = toCanvasShapes(deckPlan, 35)
+    if (deckPlan) {
+      deckPlan = orthogonalizeDeckPlan(deckPlan, warnings, 'deterministic geometry')
+      canvasShapes = toCanvasShapes(deckPlan, 35)
+    }
   } catch (err) {
     warnings.push(`Finalize: ${err.message}`)
   }
@@ -567,7 +570,7 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
 
   if (shouldUseShapeFallback && !warnings.some(w => w.includes('Shape fallback succeeded'))) {
     try {
-      // Send the preprocessed image (notebook lines removed) so GPT-4o sees a
+      // Send the preprocessed image (notebook lines removed) so Codex sees a
       // clean outline rather than the raw photo full of ruled-paper noise.
       const shapeImagePath = (imgPath && imgPath !== originalPath) ? imgPath : originalPath
       console.log(`[sketch] running shape vision on: ${shapeImagePath}`)
@@ -601,15 +604,16 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
           const visionAgreement = evaluateDeckPlanAgainstOcr(normalizedVision, ocrItems)
 
           if (!lowDimensionAgreement || visionAgreement.score >= deckPlanAgreement.score + 0.12 || visionAgreement.criticalCount < deckPlanAgreement.criticalCount) {
-            normalizedVision.allWarnings = [
+            const cleanedVision = orthogonalizeDeckPlan(normalizedVision, warnings, 'shape fallback')
+            cleanedVision.allWarnings = [
               ...(normalizedVision.warnings || []),
               ...warnings,
-              'Shape fallback succeeded: used GPT-4o perimeter reasoning because deterministic polygon extraction did not produce a usable result.',
+              'Shape fallback succeeded: used Codex CLI perimeter reasoning because deterministic polygon extraction did not produce a usable result.',
             ]
-            deckPlan = normalizedVision
+            deckPlan = cleanedVision
             canvasShapes = toCanvasShapes(deckPlan, 35)
             warnings.push(
-              `Shape fallback succeeded: used GPT-4o perimeter reasoning ` +
+              `Shape fallback succeeded: used Codex CLI perimeter reasoning ` +
               `(dimension agreement ${visionAgreement.score.toFixed(2)} vs ${deckPlanAgreement.score.toFixed(2)}).`
             )
           } else {
@@ -680,6 +684,7 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
     debugImages: debugData.debugImages,
     warnings,
   })
+  })().catch(next)
 })
 
 // ─── GET /api/sketch/debug/:sessionId ─────────────────────────────────────────
@@ -1170,6 +1175,143 @@ function removeCollinearAxisPoints(points) {
   return result.length >= 4 ? result : points
 }
 
+function rebuildSegmentsForBoundary(existingSegments, boundary) {
+  return boundary.map((start, i) => {
+    const end = boundary[(i + 1) % boundary.length]
+    const existing = Array.isArray(existingSegments) ? existingSegments[i] : null
+    return {
+      ...(existing || {}),
+      id: existing?.id || `s${i + 1}`,
+      start,
+      end,
+      geometricLength: +Math.hypot(end.x - start.x, end.y - start.y).toFixed(4),
+      inferred: existing?.inferred ?? true,
+      confidence: existing?.confidence ?? 0.75,
+    }
+  })
+}
+
+function orthogonalizeDeckPlan(deckPlan, warnings, source = 'geometry') {
+  if (!deckPlan || !Array.isArray(deckPlan.outerBoundary) || deckPlan.outerBoundary.length < 4) {
+    return deckPlan
+  }
+
+  const cleanedOuter = orthogonalizeMostlyAxisAlignedPoints(deckPlan.outerBoundary, warnings, source)
+  if (cleanedOuter === deckPlan.outerBoundary) return deckPlan
+
+  const cleanedSegments = cleanedOuter.map((start, i) => {
+    const end = cleanedOuter[(i + 1) % cleanedOuter.length]
+    const previous = Array.isArray(deckPlan.segments) ? deckPlan.segments[i] : null
+    return {
+      ...(previous || {}),
+      id: previous?.id || `s${i + 1}`,
+      start,
+      end,
+      geometricLength: +Math.hypot(end.x - start.x, end.y - start.y).toFixed(4),
+    }
+  })
+
+  return {
+    ...deckPlan,
+    outerBoundary: cleanedOuter,
+    segments: cleanedSegments,
+  }
+}
+
+function orthogonalizeMostlyAxisAlignedPoints(points, warnings, source = 'geometry') {
+  if (!Array.isArray(points) || points.length < 4) return points || []
+
+  let changed = false
+  let rejectedDiagonalCount = 0
+  const result = [{ x: roundCoord(points[0].x), y: roundCoord(points[0].y) }]
+
+  for (let i = 1; i < points.length; i++) {
+    const prev = result[result.length - 1]
+    const curr = points[i]
+    const dx = curr.x - prev.x
+    const dy = curr.y - prev.y
+    const adx = Math.abs(dx)
+    const ady = Math.abs(dy)
+
+    if (adx > 0.001 && ady > 0.001) {
+      const minor = Math.min(adx, ady)
+      const major = Math.max(adx, ady)
+
+      if (minor / major <= 0.35) {
+        changed = true
+        if (adx >= ady) {
+          result.push({ x: roundCoord(curr.x), y: prev.y })
+        } else {
+          result.push({ x: prev.x, y: roundCoord(curr.y) })
+        }
+        continue
+      }
+
+      rejectedDiagonalCount++
+    }
+
+    result.push({ x: roundCoord(curr.x), y: roundCoord(curr.y) })
+  }
+
+  const first = result[0]
+  const last = result[result.length - 1]
+  const closeDx = Math.abs(last.x - first.x)
+  const closeDy = Math.abs(last.y - first.y)
+  if (closeDx > 0.001 && closeDy > 0.001) {
+    const minor = Math.min(closeDx, closeDy)
+    const major = Math.max(closeDx, closeDy)
+    if (minor / major <= 0.35) {
+      changed = true
+      if (closeDx <= closeDy) {
+        result[result.length - 1] = { x: first.x, y: last.y }
+      } else {
+        result[result.length - 1] = { x: last.x, y: first.y }
+      }
+    } else {
+      rejectedDiagonalCount++
+    }
+  }
+
+  if (rejectedDiagonalCount > 0) {
+    warnings.push(
+      `${source}: detected ${rejectedDiagonalCount} strongly diagonal edge(s). ` +
+      'This sketch cannot be represented reliably as an orthogonal deck without manual correction.'
+    )
+  }
+
+  if (!changed) return points
+
+  const deduped = removeConsecutiveDuplicatePoints(result)
+  const cleaned = removeCollinearAxisPoints(deduped)
+  if (cleaned.length < 4) return points
+
+  warnings.push(`${source}: snapped slight skew from photographed/hand-drawn lines to orthogonal edges.`)
+  return cleaned
+}
+
+function removeConsecutiveDuplicatePoints(points) {
+  const result = []
+  for (const point of points || []) {
+    const previous = result[result.length - 1]
+    if (previous && Math.abs(previous.x - point.x) < 0.001 && Math.abs(previous.y - point.y) < 0.001) {
+      continue
+    }
+    result.push(point)
+  }
+  if (result.length > 1) {
+    const first = result[0]
+    const last = result[result.length - 1]
+    if (Math.abs(first.x - last.x) < 0.001 && Math.abs(first.y - last.y) < 0.001) {
+      result.pop()
+    }
+  }
+  return result
+}
+
+function roundCoord(value) {
+  return +Number(value || 0).toFixed(4)
+}
+
 /**
  * Remove segment labels whose implied scale (label_ft / geom_length) deviates
  * wildly from the majority of labeled segments.
@@ -1341,7 +1483,7 @@ function mergeNotes(a, b) {
 }
 
 /**
- * Associate OCR dimension labels to GPT-4o vision segments by numeric value matching.
+ * Associate OCR dimension labels to Codex CLI vision segments by numeric value matching.
  *
  * The spatial association in associateLabels() uses image [0,1] coordinates, but
  * vision-produced segments live in real-world units (meters or feet). We instead

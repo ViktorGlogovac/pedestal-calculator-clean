@@ -52,6 +52,61 @@ const normalizeBoundaryPolygons = (boundary) => {
   return []
 }
 
+const pointInRing = ([x, y], ring) => {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]
+    const [xj, yj] = ring[j]
+    const intersects = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi
+    if (intersects) inside = !inside
+  }
+  return inside
+}
+
+const orientation = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+const segmentsIntersect = (a, b, c, d) => {
+  const o1 = orientation(a, b, c)
+  const o2 = orientation(a, b, d)
+  const o3 = orientation(c, d, a)
+  const o4 = orientation(c, d, b)
+  return o1 * o2 < -EPSILON && o3 * o4 < -EPSILON
+}
+
+const geometryCanUseInteriorFastPath = (geometry) =>
+  Array.isArray(geometry) && geometry.length > 0 && geometry.every((polygon) => polygon.length === 1)
+
+const rectIsFullyInsideGeometry = (rectRing, geometry) => {
+  if (!geometryCanUseInteriorFastPath(geometry)) return false
+
+  const corners = rectRing.slice(0, 4)
+  const rectEdges = corners.map((point, index) => [point, corners[(index + 1) % corners.length]])
+
+  return geometry.some((polygon) => {
+    const outer = polygon[0]
+    if (!corners.every((corner) => pointInRing(corner, outer))) return false
+
+    for (let i = 0; i < outer.length; i++) {
+      const edgeStart = outer[i]
+      const edgeEnd = outer[(i + 1) % outer.length]
+      if (rectEdges.some(([rectStart, rectEnd]) => segmentsIntersect(rectStart, rectEnd, edgeStart, edgeEnd))) {
+        return false
+      }
+    }
+    return true
+  })
+}
+
+const getTileIntersection = (subRect, geometry) => {
+  const rectRing = subRect?.[0]
+  if (Array.isArray(rectRing) && rectIsFullyInsideGeometry(rectRing, geometry)) {
+    return [subRect]
+  }
+  return polygonClipping.intersection(subRect, geometry)
+}
+
+const coordinateKey = (x, y) => `${Number(x).toFixed(4)},${Number(y).toFixed(4)}`
+
 const TileLayout = ({
   points,
   gridSize,
@@ -302,7 +357,7 @@ const TileLayout = ({
             const subRects = subdivideTileRect(x, y, curTileW, curTileH, stepCm)
             const mergedSubRectShape = []
             subRects.forEach((subRect) => {
-              const intersection = polygonClipping.intersection(subRect, projectGeometry)
+              const intersection = getTileIntersection(subRect, projectGeometry)
               if (intersection.length > 0) {
                 mergedSubRectShape.push(...intersection)
                 // For each vertex, find pedestal height
@@ -355,7 +410,7 @@ const TileLayout = ({
           const mergedSubRectShape = []
 
           subRects.forEach((subRect) => {
-            const intersection = polygonClipping.intersection(subRect, projectGeometry)
+            const intersection = getTileIntersection(subRect, projectGeometry)
             if (intersection.length > 0) {
               mergedSubRectShape.push(...intersection)
 
@@ -427,7 +482,7 @@ const TileLayout = ({
           const mergedSubRectShape = []
 
           subRects.forEach((subRect) => {
-            const intersection = polygonClipping.intersection(subRect, projectGeometry)
+            const intersection = getTileIntersection(subRect, projectGeometry)
             if (intersection.length > 0) {
               mergedSubRectShape.push(...intersection)
 
@@ -513,28 +568,30 @@ const TileLayout = ({
       return false
     }
 
-    function isTileCornerPedestal(pedestal, tiles) {
-      // A pedestal is a tile corner if it matches any tile's corner
-      return tiles.some((tile) => {
-        const corners = [
+    function buildTileCornerSet(tiles) {
+      const corners = new Set()
+      tiles.forEach((tile) => {
+        ;[
           [tile.x, tile.y],
           [tile.x + tile.width, tile.y],
           [tile.x, tile.y + tile.height],
           [tile.x + tile.width, tile.y + tile.height],
-        ]
-        return corners.some(
-          ([cx, cy]) => Math.abs(cx - pedestal.x) < EPSILON && Math.abs(cy - pedestal.y) < EPSILON,
-        )
+        ].forEach(([x, y]) => corners.add(coordinateKey(x, y)))
       })
+      return corners
     }
 
-    function isTileCornerOrBoundaryPedestal(pedestal, tiles, boundary) {
-      return isTileCornerPedestal(pedestal, tiles) || (boundary && isOnBoundary(pedestal, boundary))
+    function isTileCornerPedestal(pedestal, tileCornerSet) {
+      return tileCornerSet.has(coordinateKey(pedestal.x, pedestal.y))
+    }
+
+    function isTileCornerOrBoundaryPedestal(pedestal, tileCornerSet, boundary) {
+      return isTileCornerPedestal(pedestal, tileCornerSet) || (boundary && isOnBoundary(pedestal, boundary))
     }
 
     function mergeClosePedestalsAdaptive(
       pedestals,
-      tiles,
+      tileCornerSet,
       boundary,
       maxDist = 60,
       orientation = 'landscape',
@@ -551,7 +608,7 @@ const TileLayout = ({
       // Group pedestals by row (landscape) or column (portrait)
       const groups = {}
       pedestals.forEach((p, i) => {
-        if (isTileCornerOrBoundaryPedestal(p, tiles, boundary)) {
+        if (isTileCornerOrBoundaryPedestal(p, tileCornerSet, boundary)) {
           merged.push(p)
           used[i] = true
         } else {
@@ -596,9 +653,10 @@ const TileLayout = ({
       })
       return merged
     }
+
     const mergedPedestals = mergeClosePedestalsAdaptive(
       dedupeAndSnapPedestals(newPedestals, userPolygonState),
-      newTiles,
+      buildTileCornerSet(newTiles),
       userPolygonState,
       60,
       orientationState,

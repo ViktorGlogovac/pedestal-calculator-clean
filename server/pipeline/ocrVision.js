@@ -1,8 +1,8 @@
 /**
- * OCR via GPT-4o Vision — reads handwritten construction annotations.
+ * OCR via Codex CLI vision — reads handwritten construction annotations.
  *
  * Tesseract.js struggles with handwritten sketches on lined paper.
- * This module calls GPT-4o Vision twice with a tight, OCR-only prompt
+ * This module calls Codex CLI vision twice with a tight, OCR-only prompt
  * and merges the two responses to reduce hallucinations and missed items.
  *
  * Merge strategy:
@@ -17,11 +17,9 @@
  */
 
 const fs   = require('fs')
-const path = require('path')
 const { parseTextDimension, normalizeUnit } = require('../utils/units')
+const { callCodexCli } = require('./codexCli')
 
-const MODEL      = process.env.OPENAI_SKETCH_MODEL || process.env.OPENAI_MODEL || 'gpt-5.4'
-const MAX_TOKENS = 800
 const OCR_RUNS   = 2          // Number of independent OCR passes to merge
 const MERGE_XY_TOL = 0.06    // Position tolerance for merging items across runs
 const SINGLE_RUN_MIN_CONF = 0.60  // Items only seen in 1 run must meet this threshold
@@ -29,7 +27,7 @@ const SINGLE_RUN_MIN_CONF = 0.60  // Items only seen in 1 run must meet this thr
 // ─── Entry Point ─────────────────────────────────────────────────────────────
 
 /**
- * Extract text annotations from a sketch image using GPT-4o Vision.
+ * Extract text annotations from a sketch image using Codex CLI vision.
  * Runs OCR_RUNS times and merges results for stability.
  *
  * @param {string} imagePath  - absolute path to the image
@@ -38,27 +36,17 @@ const SINGLE_RUN_MIN_CONF = 0.60  // Items only seen in 1 run must meet this thr
  * @returns {Promise<Array<OcrItem>>}
  */
 async function extractTextVision(imagePath, imageWidth, imageHeight) {
-  const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY
-  if (!apiKey) {
-    console.warn('[ocrVision] No OpenAI API key configured — skipping vision OCR')
-    return []
-  }
-
   if (!fs.existsSync(imagePath)) {
     console.warn('[ocrVision] Image not found:', imagePath)
     return []
   }
-
-  const base64 = fs.readFileSync(imagePath).toString('base64')
-  const ext = path.extname(imagePath).slice(1).toLowerCase()
-  const mimeType = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png'
 
   const prompt = buildPrompt()
 
   // Run OCR_RUNS times sequentially (sequential = stable, no race conditions)
   const runs = []
   for (let i = 0; i < OCR_RUNS; i++) {
-    const items = await runSinglePass(apiKey, base64, mimeType, prompt, imageWidth, imageHeight)
+    const items = await runSinglePass(imagePath, prompt, imageWidth, imageHeight)
     runs.push(items)
   }
 
@@ -95,40 +83,12 @@ Rules:
 
 // ─── Single OCR pass ─────────────────────────────────────────────────────────
 
-async function runSinglePass(apiKey, base64, mimeType, prompt, imageWidth, imageHeight) {
+async function runSinglePass(imagePath, prompt, imageWidth, imageHeight) {
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_completion_tokens: MAX_TOKENS,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: prompt },
-              { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}`, detail: 'high' } },
-            ],
-          },
-        ],
-      }),
-    })
-
-    if (!response.ok) {
-      const errText = await response.text()
-      console.warn('[ocrVision] API error:', response.status, errText.slice(0, 200))
-      return []
-    }
-
-    const json = await response.json()
-    const content = json.choices?.[0]?.message?.content || ''
+    const content = await callCodexCli({ imagePath, prompt })
     return parseVisionResponse(content, imageWidth, imageHeight)
   } catch (err) {
-    console.warn('[ocrVision] Request failed:', err.message)
+    console.warn('[ocrVision] Codex CLI request failed:', err.message)
     return []
   }
 }

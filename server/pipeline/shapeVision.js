@@ -1,30 +1,52 @@
 const fs = require('fs')
 const path = require('path')
 const { repairRawDeckPlan } = require('../models/schema')
+const { callCodexCli, messagesToPrompt, parseJsonObject } = require('./codexCli')
 
-const MODEL = process.env.OPENAI_SKETCH_MODEL || process.env.OPENAI_MODEL || 'gpt-5.4'
-const MAX_TOKENS = 3000
+const POLYGON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['unit', 'outerBoundary', 'confidence', 'warnings'],
+  properties: {
+    unit: { type: 'string' },
+    outerBoundary: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['x', 'y'],
+        properties: {
+          x: { type: 'number' },
+          y: { type: 'number' },
+        },
+      },
+    },
+    confidence: { type: 'number' },
+    warnings: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+}
 
 async function extractShapeVision(imagePath, userNotes = '', ocrItems = []) {
-  const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY
-  if (!apiKey) return null
   if (!imagePath || !fs.existsSync(imagePath)) return null
 
-  const base64 = fs.readFileSync(imagePath).toString('base64')
   const ext = path.extname(imagePath).slice(1).toLowerCase()
   const mimeType = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png'
+  const base64 = ''
 
   const ocrHintText = summarizeOcrHints(ocrItems)
 
-  const step1 = await callOpenAI(apiKey, [
+  const step1Messages = [
     {
       role: 'system',
       content:
-        'You are reading a preprocessed binary sketch of a hand-drawn deck plan. Notebook (ruled paper) lines have already been removed by preprocessing — any remaining horizontal lines are part of the deck. The image may be rotated or held sideways in the original photo.\n' +
+        'You are reading a sketch of a hand-drawn deck plan. It may be preprocessed, but faint ruled-paper lines, text boxes, and dimension callout fragments may still remain. The image may be rotated or held sideways in the original photo.\n' +
         'Your job: extract ONLY the outer perimeter polygon.\n\n' +
         'Rules:\n' +
-        '1. All visible dark lines in this preprocessed image are drawn by hand as deck edges — there are no notebook background lines to ignore.\n' +
-        '2. Ignore arrows, witness lines, dimension tick marks, and tiny staircase artefacts from hand drawing.\n' +
+        '1. Ignore faint evenly spaced notebook/background lines even if they survived preprocessing.\n' +
+        '2. Ignore arrows, witness lines, dimension tick marks, text boxes, and tiny staircase artefacts from hand drawing.\n' +
         '3. The labeled dimensions are ground truth. Trust the numbers over the drawn outline when they conflict.\n' +
         '4. ORIENTATION: Use the OCR label positions to determine which dimensions are horizontal vs vertical.\n' +
         '   - A label sitting on the LEFT or RIGHT side of the image (image-x < 0.25 or > 0.75) measures a VERTICAL height.\n' +
@@ -37,6 +59,7 @@ async function extractShapeVision(imagePath, userNotes = '', ocrItems = []) {
         '8. Trace EVERY corner faithfully — notches, steps, and cutouts are real architectural features even if they are small (e.g. 1m on a 20m deck).\n' +
         '   Only combine consecutive steps if they are clearly the same direction due to a shaky hand (e.g. RIGHT 0.05m RIGHT 0.03m).\n' +
         '   Do NOT combine a RIGHT then DOWN then RIGHT into a single RIGHT — that is a notch.\n' +
+        '9. Do NOT create diagonal edges for a rectilinear deck. If a photographed vertical side is slightly slanted, output it as UP/DOWN, not as a diagonal.\n' +
         (userNotes ? `User notes: "${userNotes}"\n` : ''),
     },
     {
@@ -58,7 +81,12 @@ async function extractShapeVision(imagePath, userNotes = '', ocrItems = []) {
         { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}`, detail: 'high' } },
       ],
     },
-  ])
+  ]
+
+  const step1 = await callCodexCli({
+    imagePath,
+    prompt: messagesToPrompt(step1Messages),
+  })
 
   console.log('[shapeVision] step1 walk:\n', step1)
 
@@ -68,11 +96,11 @@ async function extractShapeVision(imagePath, userNotes = '', ocrItems = []) {
   let parsed = parseWalkToPolygon(step1)
   console.log('[shapeVision] deterministic parse corners:', parsed?.outerBoundary?.length ?? 0)
 
-  // Fall back to a single GPT-4o JSON conversion only if the deterministic
+  // Fall back to a single Codex CLI JSON conversion only if the deterministic
   // parser couldn't extract enough segments (e.g. walk text was malformed).
   if (!parsed || parsed.outerBoundary.length < 4) {
-    console.log('[shapeVision] deterministic parse failed — trying GPT-4o JSON fallback')
-    const jsonFallback = await callOpenAI(apiKey, [
+    console.log('[shapeVision] deterministic parse failed — trying Codex CLI JSON fallback')
+    const jsonFallbackMessages = [
       {
         role: 'system',
         content:
@@ -85,8 +113,12 @@ async function extractShapeVision(imagePath, userNotes = '', ocrItems = []) {
         role: 'user',
         content: `Walk:\n${step1}`,
       },
-    ])
-    console.log('[shapeVision] GPT-4o JSON fallback:\n', jsonFallback)
+    ]
+    const jsonFallback = await callCodexCli({
+      outputSchema: POLYGON_SCHEMA,
+      prompt: messagesToPrompt(jsonFallbackMessages),
+    })
+    console.log('[shapeVision] Codex CLI JSON fallback:\n', jsonFallback)
     parsed = parseJsonObject(jsonFallback)
   }
 
@@ -97,7 +129,7 @@ async function extractShapeVision(imagePath, userNotes = '', ocrItems = []) {
   console.log('[shapeVision] final corners:', parsed.outerBoundary.length, JSON.stringify(parsed.outerBoundary))
 
   // Force all edges to be purely horizontal or vertical.
-  // GPT-4o sometimes produces slightly skewed edges (e.g. from (0,0) to (1,6)
+  // The vision model sometimes produces slightly skewed edges (e.g. from (0,0) to (1,6)
   // instead of (0,0) to (0,6)) which appear as diagonals on the canvas.
   // This must run before the orientation check so that the bounding box
   // used by maybeRotate90 is axis-aligned.
@@ -110,7 +142,7 @@ async function extractShapeVision(imagePath, userNotes = '', ocrItems = []) {
 
   // Deterministic orientation check: if the polygon is wider than it is tall,
   // but the evidence says the deck should be taller than wide, rotate 90° CCW.
-  // We use the step1 reasoning text as the primary signal (GPT-4o states
+  // We use the step1 reasoning text as the primary signal (the model states
   // "ORIENTATION: deck is TALLER/WIDER" explicitly), falling back to OCR bbox
   // positions if the step1 statement is absent.
   parsed = maybeRotate90(parsed, ocrItems, step1)
@@ -123,7 +155,7 @@ async function extractShapeVision(imagePath, userNotes = '', ocrItems = []) {
     depthPoints: [],
     notes: [
       {
-        text: 'Shape fallback generated by GPT-4o perimeter reasoning',
+        text: 'Shape fallback generated by Codex CLI perimeter reasoning',
         confidence: 0.6,
       },
     ],
@@ -134,47 +166,6 @@ async function extractShapeVision(imagePath, userNotes = '', ocrItems = []) {
   rawPlan._alreadyScaled = true
   rawPlan._visionTrace = step1
   return rawPlan
-}
-
-async function callOpenAI(apiKey, messages) {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_completion_tokens: MAX_TOKENS,
-      messages,
-    }),
-  })
-
-  if (!response.ok) {
-    const errText = await response.text().catch(() => '')
-    throw new Error(`Shape vision API error ${response.status}: ${errText.slice(0, 180)}`)
-  }
-
-  const data = await response.json()
-  return data.choices?.[0]?.message?.content || ''
-}
-
-function parseJsonObject(content) {
-  const cleaned = String(content || '')
-    .replace(/^```[a-z]*\n?/im, '')
-    .replace(/\n?```$/m, '')
-    .trim()
-  try {
-    return JSON.parse(cleaned)
-  } catch (_) {
-    const match = cleaned.match(/\{[\s\S]*\}/)
-    if (!match) return null
-    try {
-      return JSON.parse(match[0])
-    } catch (_) {
-      return null
-    }
-  }
 }
 
 function buildSegments(points) {
@@ -202,7 +193,7 @@ function normalizeOutputUnit(unit) {
 }
 
 /**
- * Parse a GPT-4o perimeter walk ("RIGHT 6 m", "DOWN 20 m", ...) directly into
+ * Parse a Codex CLI perimeter walk ("RIGHT 6 m", "DOWN 20 m", ...) directly into
  * polygon coordinates.  This is deterministic — no LLM involvement — so it
  * preserves every corner exactly as stated in the walk without any simplification.
  *
@@ -278,13 +269,13 @@ function parseWalkToPolygon(walkText) {
 module.exports = { extractShapeVision }
 
 /**
- * Detect and correct a 90° orientation error in a GPT-4o-generated polygon.
+ * Detect and correct a 90° orientation error in a vision-generated polygon.
  *
- * GPT-4o frequently produces a landscape polygon for portrait sketches.
+ * Vision models can produce a landscape polygon for portrait sketches.
  * We detect this by checking whether the polygon is wider than tall, then
  * confirm it should be portrait using two signals (in priority order):
  *
- *   1. step1 reasoning text — GPT-4o explicitly states
+ *   1. step1 reasoning text — the model explicitly states
  *      "ORIENTATION: deck is TALLER" or "ORIENTATION: deck is WIDER"
  *   2. OCR bbox positions — labels at cx < 0.25 or cx > 0.75 measure
  *      vertical heights; labels at cy < 0.20 or cy > 0.80 measure widths.
@@ -305,8 +296,8 @@ function maybeRotate90(parsedPlan, ocrItems, step1Text) {
   if (polyH >= polyW) return parsedPlan
 
   // ── Signal 1: explicit orientation statement in step1 reasoning ────────────
-  // GPT-4o is prompted to write "ORIENTATION: deck is TALLER" or "WIDER".
-  // This is the most reliable signal because it comes from GPT-4o reading the
+  // The model is prompted to write "ORIENTATION: deck is TALLER" or "WIDER".
+  // This is the most reliable signal because it comes from the model reading the
   // actual sketch — no dependence on OCR bbox accuracy.
   const orientMatch = String(step1Text || '').match(/ORIENTATION[^:]*:\s*deck\s+is\s+(TALLER|WIDER|PORTRAIT|LANDSCAPE)/i)
   if (orientMatch) {
@@ -340,9 +331,9 @@ function maybeRotate90(parsedPlan, ocrItems, step1Text) {
 }
 
 /**
- * Snap every edge of a GPT-4o polygon to be purely horizontal or vertical.
+ * Snap every edge of a vision polygon to be purely horizontal or vertical.
  *
- * GPT-4o sometimes returns slightly off-axis coordinates (e.g. going from
+ * Vision models sometimes return slightly off-axis coordinates (e.g. going from
  * (0,0) to (1.2, 6) instead of a clean (0, 6) vertical), producing visible
  * diagonal sides on the canvas.
  *
@@ -413,7 +404,7 @@ function forceOrthogonal(parsedPlan) {
 
 /**
  * Remove intermediate vertices where two consecutive edges travel in the
- * same direction (same axis, same sign).  These arise when GPT-4o emits
+ * same direction (same axis, same sign).  These arise when the model emits
  * two adjacent RIGHT/LEFT/UP/DOWN moves that were not collapsed by step3.
  *
  * Example: (0,0)→(3,0)→(7,0) — the vertex at (3,0) is collinear and

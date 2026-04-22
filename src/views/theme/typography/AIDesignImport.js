@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import PropTypes from 'prop-types'
 import Modal, { ModalHeader, ModalBody, ModalFooter } from '../../../components/Modal'
-import { analyzeSketch, withNotes } from '../../../lib/sketchApi'
+import { analyzeSketch } from '../../../lib/sketchApi'
 
 const STAGES = [
   { id: 'ocr', label: 'Extracting text labels...', duration: 5000 },
@@ -23,19 +23,21 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35 }) => {
   const [completedStages, setCompletedStages] = useState([])
   const [error, setError] = useState('')
   const [result, setResult] = useState(null)
-  const [userNotes, setUserNotes] = useState('')
   const fileInputRef = useRef(null)
   const depthFileInputRef = useRef(null)
   const stageTimerRef = useRef(null)
+  const analyzeWatchdogRef = useRef(null)
 
   useEffect(() => {
     return () => {
       if (stageTimerRef.current) clearTimeout(stageTimerRef.current)
+      if (analyzeWatchdogRef.current) clearTimeout(analyzeWatchdogRef.current)
     }
   }, [])
 
   const handleClose = () => {
     if (stageTimerRef.current) clearTimeout(stageTimerRef.current)
+    if (analyzeWatchdogRef.current) clearTimeout(analyzeWatchdogRef.current)
     setImageFile(null)
     setImagePreview(null)
     setDepthImageFile(null)
@@ -45,7 +47,6 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35 }) => {
     setIsAnalyzing(false)
     setCurrentStage(-1)
     setCompletedStages([])
-    setUserNotes('')
     onClose()
   }
 
@@ -124,11 +125,19 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35 }) => {
     setCurrentStage(0)
     setCompletedStages([])
     runStageProgress()
+    if (analyzeWatchdogRef.current) clearTimeout(analyzeWatchdogRef.current)
+    analyzeWatchdogRef.current = setTimeout(() => {
+      if (stageTimerRef.current) clearTimeout(stageTimerRef.current)
+      setCurrentStage(-1)
+      setCompletedStages([])
+      setIsAnalyzing(false)
+      setError('Analysis timed out. Check that the backend server and Codex CLI are running, then try again.')
+    }, 110000)
 
     try {
-      const taggedFile = userNotes.trim() ? withNotes(imageFile, userNotes.trim()) : imageFile
-      const apiResult = await analyzeSketch(taggedFile, depthImageFile || null)
+      const apiResult = await analyzeSketch(imageFile, depthImageFile || null)
 
+      if (analyzeWatchdogRef.current) clearTimeout(analyzeWatchdogRef.current)
       if (stageTimerRef.current) clearTimeout(stageTimerRef.current)
       setCurrentStage(-1)
       setCompletedStages(STAGES.map((_, i) => i))
@@ -139,11 +148,13 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35 }) => {
         setResult(apiResult)
       }
     } catch (err) {
+      if (analyzeWatchdogRef.current) clearTimeout(analyzeWatchdogRef.current)
       if (stageTimerRef.current) clearTimeout(stageTimerRef.current)
       setCurrentStage(-1)
       setCompletedStages([])
       setError(err.message || 'Analysis failed. Please try again.')
     } finally {
+      if (analyzeWatchdogRef.current) clearTimeout(analyzeWatchdogRef.current)
       setIsAnalyzing(false)
     }
   }
@@ -232,8 +243,6 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35 }) => {
                 }}
               />
 
-              <GuidanceField value={userNotes} disabled={isAnalyzing} onChange={setUserNotes} />
-
               {isAnalyzing && (
                 <StageProgress
                   stages={STAGES}
@@ -264,7 +273,6 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35 }) => {
               <PipelineCard
                 hasPlan={!!imageFile}
                 hasDepth={!!depthImageFile}
-                hasGuidance={!!userNotes.trim()}
                 isAnalyzing={isAnalyzing}
                 result={result}
               />
@@ -465,42 +473,6 @@ const DropZone = ({
           <div style={{ color: 'var(--pc-ink-4)', fontSize: big ? 13 : 12 }}>{emptyHint}</div>
         </div>
       )}
-    </div>
-  </section>
-)
-
-const GuidanceField = ({ value, disabled, onChange }) => (
-  <section>
-    <label
-      htmlFor="ai-guidance"
-      style={{ fontSize: 13, fontWeight: 650, color: 'var(--pc-ink-2)', marginBottom: 6 }}
-    >
-      Guidance for AI
-    </label>
-    <textarea
-      id="ai-guidance"
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      disabled={disabled}
-      placeholder="Example: L-shaped deck, 44ft wide by 25ft 6in deep, notch at top-left is 7ft wide by 6ft tall, unit is feet"
-      rows={3}
-      style={{
-        width: '100%',
-        padding: '10px 12px',
-        border: '1px solid var(--pc-line-2)',
-        borderRadius: 8,
-        fontSize: 13,
-        color: 'var(--pc-ink)',
-        background: 'var(--pc-surface)',
-        resize: 'vertical',
-        outline: 'none',
-        lineHeight: 1.5,
-        opacity: disabled ? 0.6 : 1,
-        boxSizing: 'border-box',
-      }}
-    />
-    <div style={{ fontSize: 11.5, color: 'var(--pc-ink-4)', marginTop: 4 }}>
-      Add shape notes, units, unclear labels, or corrections before re-analyzing.
     </div>
   </section>
 )
@@ -860,7 +832,7 @@ const StatusCard = ({ title, items }) => (
   </section>
 )
 
-const PipelineCard = ({ hasPlan, hasDepth, hasGuidance, isAnalyzing, result }) => (
+const PipelineCard = ({ hasPlan, hasDepth, isAnalyzing, result }) => (
   <section
     style={{
       padding: 14,
@@ -876,7 +848,6 @@ const PipelineCard = ({ hasPlan, hasDepth, hasGuidance, isAnalyzing, result }) =
     </div>
     <PipelineStep active={hasPlan} label="Plan image loaded" />
     <PipelineStep active={hasDepth} label="Depth annotations available" optional />
-    <PipelineStep active={hasGuidance} label="Guidance notes added" optional />
     <PipelineStep active={isAnalyzing || !!result} label="Analysis run" />
   </section>
 )
@@ -988,12 +959,6 @@ DropZone.propTypes = {
   big: PropTypes.bool,
 }
 
-GuidanceField.propTypes = {
-  value: PropTypes.string.isRequired,
-  disabled: PropTypes.bool.isRequired,
-  onChange: PropTypes.func.isRequired,
-}
-
 StageProgress.propTypes = {
   stages: PropTypes.arrayOf(
     PropTypes.shape({
@@ -1047,7 +1012,6 @@ StatusCard.propTypes = {
 PipelineCard.propTypes = {
   hasPlan: PropTypes.bool.isRequired,
   hasDepth: PropTypes.bool.isRequired,
-  hasGuidance: PropTypes.bool.isRequired,
   isAnalyzing: PropTypes.bool.isRequired,
   result: PropTypes.object,
 }

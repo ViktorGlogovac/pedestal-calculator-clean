@@ -12,7 +12,9 @@ const PORT = process.env.PORT || 3001
 app.use(cors({
   origin: [
     'http://localhost:3000',
+    'http://localhost:3001',
     'http://127.0.0.1:3000',
+    'http://127.0.0.1:3001',
     'https://enmon-pedestal.web.app',
     'https://enmon-pedestal.firebaseapp.com',
   ],
@@ -35,7 +37,8 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    openaiConfigured: !!(process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY),
+    codexCli: process.env.CODEX_CLI_PATH || 'codex',
+    codexModel: process.env.CODEX_SKETCH_MODEL || process.env.OPENAI_SKETCH_MODEL || process.env.OPENAI_MODEL || 'default',
   })
 })
 
@@ -69,7 +72,7 @@ app.use((err, req, res, next) => {
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`[Sketch Server] Running on http://localhost:${PORT}`)
-  console.log(`[Sketch Server] OpenAI API key: ${(process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY) ? 'configured' : 'NOT configured'}`)
+  console.log(`[Sketch Server] Codex CLI: ${process.env.CODEX_CLI_PATH || 'codex'}`)
   console.log(`[Sketch Server] Uploads directory: ${uploadsPath}`)
 })
 

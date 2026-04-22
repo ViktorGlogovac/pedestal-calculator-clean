@@ -2,7 +2,7 @@
  * Pedestal depth extraction from a dedicated depth-annotation image.
  *
  * The user draws the deck shape a second time with pedestal heights (in mm)
- * written at their locations. GPT-4o reads every depth value and expresses
+ * written at their locations. Codex CLI reads every depth value and expresses
  * each position as a fraction (fx, fy) of the deck bounding box. The JS code
  * converts those fractions to real deck coordinates using the polygon from
  * the primary analyzeSketch pass.
@@ -10,9 +10,32 @@
 
 const fs = require('fs')
 const path = require('path')
+const { callCodexCli, messagesToPrompt, parseJsonObject } = require('./codexCli')
 
-const MODEL = process.env.OPENAI_SKETCH_MODEL || process.env.OPENAI_MODEL || 'gpt-5.4'
-const MAX_TOKENS = 2200
+const DEPTH_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['depths'],
+  properties: {
+    depths: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['value', 'unit', 'x', 'y', 'fx', 'fy', 'description'],
+        properties: {
+          value: { type: 'number' },
+          unit: { type: 'string' },
+          x: { type: ['number', 'null'] },
+          y: { type: ['number', 'null'] },
+          fx: { type: ['number', 'null'] },
+          fy: { type: ['number', 'null'] },
+          description: { type: 'string' },
+        },
+      },
+    },
+  },
+}
 
 /**
  * Extract pedestal depth points from an annotated depth image.
@@ -23,8 +46,6 @@ const MAX_TOKENS = 2200
  * @returns {Promise<Array<{value, unit, x, y, description}>>}
  */
 async function analyzeDepths(imagePath, deckPolygon, deckUnit, { isMainSketch = false } = {}) {
-  const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY
-  if (!apiKey) throw new Error('No OpenAI API key configured')
   if (!fs.existsSync(imagePath)) throw new Error('Depth image not found: ' + imagePath)
 
   const maxX = Math.max(...deckPolygon.map((p) => p.x))
@@ -35,9 +56,9 @@ async function analyzeDepths(imagePath, deckPolygon, deckUnit, { isMainSketch = 
     .map((p, i) => `  vertex ${i + 1}: (${+p.x.toFixed(2)}, ${+p.y.toFixed(2)})`)
     .join('\n')
 
-  const base64 = fs.readFileSync(imagePath).toString('base64')
   const ext = path.extname(imagePath).slice(1).toLowerCase()
   const mimeType = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png'
+  const base64 = ''
 
   const systemPrompt =
     'You are a pedestal depth extraction specialist.\n' +
@@ -81,7 +102,7 @@ async function analyzeDepths(imagePath, deckPolygon, deckUnit, { isMainSketch = 
     '- Do NOT include obvious outside-the-deck span dimensions with long measurement lines (for example deck width/length callouts).\n' +
     '- For a dense height sketch, it is normal for dozens of depth points to exist.'
 
-  const primaryResponse = await callOpenAI(apiKey, [
+  const primaryMessages = [
     { role: 'system', content: systemPrompt },
     {
       role: 'user',
@@ -90,7 +111,12 @@ async function analyzeDepths(imagePath, deckPolygon, deckUnit, { isMainSketch = 
         { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}`, detail: 'high' } },
       ],
     },
-  ])
+  ]
+  const primaryResponse = await callCodexCli({
+    imagePath,
+    outputSchema: DEPTH_SCHEMA,
+    prompt: messagesToPrompt(primaryMessages),
+  })
 
   console.log('[analyzeDepths] primary response:\n', primaryResponse)
 
@@ -98,7 +124,7 @@ async function analyzeDepths(imagePath, deckPolygon, deckUnit, { isMainSketch = 
   let depthPoints = normalizeDepths(parsed?.depths, { maxX, maxY, deckUnit })
 
   if (depthPoints.length === 0) {
-    const fallbackResponse = await callOpenAI(apiKey, [
+    const fallbackMessages = [
       {
         role: 'system',
         content:
@@ -133,7 +159,12 @@ async function analyzeDepths(imagePath, deckPolygon, deckUnit, { isMainSketch = 
           { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}`, detail: 'high' } },
         ],
       },
-    ])
+    ]
+    const fallbackResponse = await callCodexCli({
+      imagePath,
+      outputSchema: DEPTH_SCHEMA,
+      prompt: messagesToPrompt(fallbackMessages),
+    })
 
     console.log('[analyzeDepths] fallback response:\n', fallbackResponse)
     parsed = parseJsonObject(fallbackResponse)
@@ -193,49 +224,6 @@ function normalizeDepthUnit(rawUnit, fallbackUnit) {
   if (['m', 'meter', 'meters', 'metre', 'metres'].includes(unit)) return 'm'
 
   return fallbackUnit
-}
-
-async function callOpenAI(apiKey, messages) {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_completion_tokens: MAX_TOKENS,
-      messages,
-      response_format: { type: 'json_object' },
-    }),
-  })
-
-  if (!response.ok) {
-    const err = await response.text().catch(() => '')
-    throw new Error(`OpenAI API error ${response.status}: ${err.slice(0, 200)}`)
-  }
-
-  const data = await response.json()
-  return data.choices?.[0]?.message?.content || ''
-}
-
-function parseJsonObject(content) {
-  const cleaned = String(content || '')
-    .replace(/^```[a-z]*\n?/im, '')
-    .replace(/\n?```\s*$/m, '')
-    .trim()
-
-  try {
-    return JSON.parse(cleaned)
-  } catch (_) {
-    const match = cleaned.match(/\{[\s\S]*\}/)
-    if (!match) return null
-    try {
-      return JSON.parse(match[0])
-    } catch (_) {
-      return null
-    }
-  }
 }
 
 module.exports = { analyzeDepths }

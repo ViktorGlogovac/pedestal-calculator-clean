@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react'
 import PropTypes from 'prop-types'
 import { polygonSignedArea } from './geometryUtils'
-import polygonClipping from 'polygon-clipping'
 
 export const CANVAS_WIDTH = 900
 export const CANVAS_HEIGHT = 600
@@ -169,6 +168,13 @@ const TileCanvas = ({
       ctx.stroke()
     })
 
+    const cmScale = cmToPx(1) || 1
+    const viewLeft = (-panOffset.x / zoom) / cmScale
+    const viewTop = (-panOffset.y / zoom) / cmScale
+    const viewRight = ((canvas.width - panOffset.x) / zoom) / cmScale
+    const viewBottom = ((canvas.height - panOffset.y) / zoom) / cmScale
+    const viewPad = 100
+
     // 3. Pedestals (red circles)
     // Calculate min and max heights for relative scaling
     const heights = pedestals.map((p) => p.height || 0)
@@ -178,6 +184,15 @@ const TileCanvas = ({
     const hasHeightValues = maxHeight > 0 // Check if any pedestal has a height value
 
     pedestals.forEach((p) => {
+      if (
+        p.x > viewRight + viewPad ||
+        p.x < viewLeft - viewPad ||
+        p.y > viewBottom + viewPad ||
+        p.y < viewTop - viewPad
+      ) {
+        return
+      }
+
       const cx = cmToPx(p.x)
       const cy = cmToPx(p.y)
 
@@ -256,7 +271,15 @@ const TileCanvas = ({
     ctx.strokeStyle = '#d9d8d2'
 
     tiles.forEach((tile) => {
-      let finalPolygons = []
+      if (
+        tile.x > viewRight + viewPad ||
+        tile.x + tile.width < viewLeft - viewPad ||
+        tile.y > viewBottom + viewPad ||
+        tile.y + tile.height < viewTop - viewPad
+      ) {
+        return
+      }
+
       const validTileShapes = (tile.shape || []).filter(
         (polygon) =>
           Array.isArray(polygon) &&
@@ -274,21 +297,20 @@ const TileCanvas = ({
       )
       if (validTileShapes.length === 0) return
 
-      const unioned = polygonClipping.union(...validTileShapes)
-      finalPolygons = unioned.flat() // depends on shape
-
-      finalPolygons.forEach((poly) => {
-        ctx.beginPath()
-        poly.forEach(([sx, sy], idx) => {
-          if (!Number.isFinite(sx) || !Number.isFinite(sy)) return
-          const px = cmToPx(sx)
-          const py = cmToPx(sy)
-          if (!Number.isFinite(px) || !Number.isFinite(py)) return
-          if (idx === 0) ctx.moveTo(px, py)
-          else ctx.lineTo(px, py)
+      validTileShapes.forEach((polygon) => {
+        polygon.forEach((ring) => {
+          ctx.beginPath()
+          ring.forEach(([sx, sy], idx) => {
+            if (!Number.isFinite(sx) || !Number.isFinite(sy)) return
+            const px = cmToPx(sx)
+            const py = cmToPx(sy)
+            if (!Number.isFinite(px) || !Number.isFinite(py)) return
+            if (idx === 0) ctx.moveTo(px, py)
+            else ctx.lineTo(px, py)
+          })
+          ctx.closePath()
+          ctx.stroke()
         })
-        ctx.closePath()
-        ctx.stroke()
       })
     })
 

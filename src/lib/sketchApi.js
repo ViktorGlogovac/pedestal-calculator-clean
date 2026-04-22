@@ -41,13 +41,26 @@ async function analyzeSketch(imageFile, depthImageFile = null) {
   }
 
   let response
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), 100000)
   try {
     response = await fetch(`${BACKEND_BASE}/analyze`, {
       method: 'POST',
       body: formData,
+      signal: controller.signal,
       // Do NOT set Content-Type header — browser sets it automatically with boundary
     })
   } catch (networkErr) {
+    if (networkErr.name === 'AbortError') {
+      return {
+        success: false,
+        error: 'Analysis timed out. The Codex CLI did not return a result in time.',
+        canvasShapes: [],
+        warnings: [],
+        debugImages: {},
+      }
+    }
+
     const isConnectionRefused =
       networkErr.message.includes('Failed to fetch') ||
       networkErr.message.includes('NetworkError') ||
@@ -62,6 +75,8 @@ async function analyzeSketch(imageFile, depthImageFile = null) {
       warnings: [],
       debugImages: {},
     }
+  } finally {
+    window.clearTimeout(timeoutId)
   }
 
   let data
