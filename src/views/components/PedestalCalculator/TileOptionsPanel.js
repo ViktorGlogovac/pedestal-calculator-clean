@@ -3,10 +3,10 @@ import PropTypes from 'prop-types'
 
 export const TILE_TYPES = [
   { id: 'tile16-16', name: 'Tile 16x16 in', width: 40.64, height: 40.64 },
-  { id: 'tile60-60', name: 'Tile 60x60 cm', width: 60, height: 60 },
-  { id: 'tile40-60', name: 'Tile 40x60 cm', width: 60, height: 40 },
-  { id: 'tile60-120', name: 'Tile 60x120 cm', width: 120, height: 60 },
-  { id: 'tile30-120', name: 'Tile 30x120 cm', width: 120, height: 30 },
+  { id: 'tile60-60', name: 'Tile 60x60 cm', width: 60, height: 60, imperialWidth: 60.96, imperialHeight: 60.96 },
+  { id: 'tile40-60', name: 'Tile 40x60 cm', width: 60, height: 40, imperialWidth: 60.96, imperialHeight: 40.64 },
+  { id: 'tile60-120', name: 'Tile 60x120 cm', width: 120, height: 60, imperialWidth: 121.92, imperialHeight: 60.96 },
+  { id: 'tile30-120', name: 'Tile 30x120 cm', width: 120, height: 30, imperialWidth: 121.92, imperialHeight: 30.48 },
 ]
 
 export const CANVAS_HEIGHT = 600
@@ -28,6 +28,15 @@ function TileOptionsPanel({
   const isOffsetEnabled =
     selectedTileType.id === 'tile60-120' || selectedTileType.id === 'tile30-120'
   const isThirdOffsetEnabled = selectedTileType.id === 'tile30-120'
+  const getTileDimensions = (tile) => {
+    if (unitSystem === 'imperial') {
+      return {
+        width: tile.imperialWidth || tile.width,
+        height: tile.imperialHeight || tile.height,
+      }
+    }
+    return { width: tile.width, height: tile.height }
+  }
 
   return (
     <aside
@@ -59,8 +68,9 @@ function TileOptionsPanel({
       <PanelSection title="Tile Size">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {TILE_TYPES.map((tile) => {
-            const dim1 = unitSystem === 'imperial' ? tile.width / 2.54 : tile.width
-            const dim2 = unitSystem === 'imperial' ? tile.height / 2.54 : tile.height
+            const tileDims = getTileDimensions(tile)
+            const dim1 = unitSystem === 'imperial' ? tileDims.width / 2.54 : tileDims.width
+            const dim2 = unitSystem === 'imperial' ? tileDims.height / 2.54 : tileDims.height
             const smaller = Math.min(dim1, dim2)
             const larger = Math.max(dim1, dim2)
             const unit = unitSystem === 'imperial' ? 'in' : 'cm'
@@ -83,7 +93,7 @@ function TileOptionsPanel({
                 }}
               >
                 <span>{`${roundDimension(smaller)}x${roundDimension(larger)} ${unit}`}</span>
-                <TileSwatch width={tile.width} height={tile.height} active={active} />
+                <TileSwatch width={tileDims.width} height={tileDims.height} active={active} />
               </button>
             )
           })}

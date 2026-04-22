@@ -13,15 +13,23 @@ const PedestalEditor = ({
   modalPosition, // { x: number, y: number } for absolute positioning
 }) => {
   if (!pedestal) return null
+  const editorWidth = 360
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1200
+  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 800
+  const maxHeight = Math.max(280, viewportHeight - 32)
+  const top = Math.max(16, Math.min(modalPosition.y, viewportHeight - maxHeight - 16))
+  const left = Math.max(16, Math.min(modalPosition.x, viewportWidth - editorWidth - 16))
 
   return (
     <div
       style={{
-        position: 'absolute',
-        top: modalPosition.y,
-        left: modalPosition.x,
+        position: 'fixed',
+        top,
+        left,
         zIndex: 1000,
-        width: '360px',
+        width: editorWidth,
+        maxHeight,
+        overflowY: 'auto',
         padding: '20px',
         backgroundColor: 'var(--pc-surface)',
         color: 'var(--pc-ink)',

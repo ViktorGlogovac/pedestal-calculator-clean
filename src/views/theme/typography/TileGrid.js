@@ -18,13 +18,33 @@ import TileOptionsPanel from '../../components/PedestalCalculator/TileOptionsPan
 
 const TILE_TYPES = [
   { id: 'tile16-16', name: 'Tile 16×16 in', width: 40.64, height: 40.64 },
-  { id: 'tile60-60', name: 'Tile 60×60 cm', width: 60, height: 60 },
-  { id: 'tile40-60', name: 'Tile 40×60 cm', width: 60, height: 40 },
-  { id: 'tile60-120', name: 'Tile 60×120 cm', width: 120, height: 60 },
-  { id: 'tile30-120', name: 'Tile 30×120 cm', width: 120, height: 30 },
+  { id: 'tile60-60', name: 'Tile 60×60 cm', width: 60, height: 60, imperialWidth: 60.96, imperialHeight: 60.96 },
+  { id: 'tile40-60', name: 'Tile 40×60 cm', width: 60, height: 40, imperialWidth: 60.96, imperialHeight: 40.64 },
+  { id: 'tile60-120', name: 'Tile 60×120 cm', width: 120, height: 60, imperialWidth: 121.92, imperialHeight: 60.96 },
+  { id: 'tile30-120', name: 'Tile 30×120 cm', width: 120, height: 30, imperialWidth: 121.92, imperialHeight: 30.48 },
 ]
 
 const EPSILON = 1e-6
+
+const getTileDimensions = (tile, unitSystem) => {
+  if (unitSystem === 'imperial') {
+    return {
+      width: tile.imperialWidth || tile.width,
+      height: tile.imperialHeight || tile.height,
+    }
+  }
+  return { width: tile.width, height: tile.height }
+}
+
+const mergeTileShape = (shape) => {
+  if (!Array.isArray(shape) || shape.length <= 1) return shape
+  try {
+    const merged = polygonClipping.union(...shape)
+    return Array.isArray(merged) && merged.length ? merged : shape
+  } catch (_) {
+    return shape
+  }
+}
 
 const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated }) => {
   const [selectedTileType, setSelectedTileType] = useState(TILE_TYPES[0])
@@ -232,15 +252,16 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
     }
 
     // 6. Generate tile placements
-    let tileWidthCm = selectedTileTypeState.width
-    let tileHeightCm = selectedTileTypeState.height
+    const selectedTileDims = getTileDimensions(selectedTileTypeState, unitSystem)
+    let tileWidthCm = selectedTileDims.width
+    let tileHeightCm = selectedTileDims.height
 
     // Swap dimensions if in portrait orientation
     if (orientationState === 'portrait') {
       ;[tileWidthCm, tileHeightCm] = [tileHeightCm, tileWidthCm]
     }
 
-    const stepCm = 60 // subdividing step for smaller polygons
+    const pedestalStepCm = Math.min(tileWidthCm, tileHeightCm)
     const xs = controlPoints.map((p) => p.x)
     const ys = controlPoints.map((p) => p.y)
     const minX = Math.min(...xs)
@@ -288,7 +309,7 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
         const curTileH = Math.min(tileHeightCm, maxY - y)
         if (curTileW <= 0 || curTileH <= 0) continue
 
-        const subRects = subdivideTileRect(x, y, curTileW, curTileH, stepCm)
+        const subRects = subdivideTileRect(x, y, curTileW, curTileH, pedestalStepCm)
         const mergedSubRectShape = []
 
         subRects.forEach((subRect) => {
@@ -338,7 +359,7 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
             y,
             width: curTileW,
             height: curTileH,
-            shape: mergedSubRectShape, // array of polygons
+            shape: mergeTileShape(mergedSubRectShape),
           })
         }
       }
@@ -366,6 +387,7 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
     gridSize,
     onDataCalculated,
     orientationState,
+    unitSystem,
   ])
 
   useEffect(() => {
