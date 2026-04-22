@@ -524,6 +524,9 @@ const PedestalCalculatorMain = () => {
                 calcData={calcData}
                 unitSystem={unitSystem}
                 onShowInstructions={() => setShowInstructions(true)}
+                projectName={activeProjectName}
+                userEmail={user?.email}
+                metrics={metrics}
               />
             )}
           </div>
