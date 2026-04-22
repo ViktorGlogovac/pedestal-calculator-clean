@@ -35,13 +35,13 @@ const WALK_SCHEMA = {
   },
 }
 
-async function analyzeSketch(imagePath, userNotes = '') {
+async function analyzeSketch(imagePath, userNotes = '', unitSystem = 'metric') {
   if (!fs.existsSync(imagePath)) throw new Error('Image not found: ' + imagePath)
 
   const response = await callCodexCli({
     imagePath,
     outputSchema: WALK_SCHEMA,
-    prompt: buildPrompt(userNotes),
+    prompt: buildPrompt(userNotes, unitSystem),
   })
   console.log('[analyzeSketch] codex response:\n', response)
 
@@ -50,7 +50,7 @@ async function analyzeSketch(imagePath, userNotes = '') {
     throw new Error('Codex CLI did not return a valid JSON walk')
   }
 
-  const unit = normalizeUnit(parsed.unit)
+  const unit = normalizeUnit(parsed.unit, unitSystem)
   const normalized = normalizeWalk(parsed.walk)
   const polygon = removeCollinearPoints(walkToPolygon(normalized.walk))
   if (!polygon || polygon.length < 4) {
@@ -73,7 +73,12 @@ async function analyzeSketch(imagePath, userNotes = '') {
   }
 }
 
-function buildPrompt(userNotes) {
+function buildPrompt(userNotes, unitSystem) {
+  const isImperial = unitSystem === 'imperial'
+  const unitInstruction = isImperial
+    ? 'The user says this sketch uses imperial units. Interpret bare numbers and foot marks as feet. Return "unit": "ft".'
+    : 'The user says this sketch uses metric units. Interpret bare numbers and m labels as meters. Return "unit": "m".'
+
   return `Look at the attached hand-drawn deck/patio plan and return the same kind of basic geometry answer a careful human would give.
 
 Task:
@@ -89,6 +94,7 @@ Task:
 - The walk must close exactly: total RIGHT must equal total LEFT, and total DOWN must equal total UP.
 - If two sides look similar, do not mirror one side onto the other. Preserve asymmetry from the drawing.
 - Do not run OCR-style overthinking. Do not invent extra steps. Do not create diagonals.
+- ${unitInstruction}
 - Return JSON only.
 
 Output exactly:
@@ -273,13 +279,13 @@ function buildSegments(points, walk, unit) {
   })
 }
 
-function normalizeUnit(unit) {
-  if (!unit) return 'ft'
+function normalizeUnit(unit, unitSystem = 'metric') {
+  if (!unit) return unitSystem === 'imperial' ? 'ft' : 'm'
   const s = String(unit).toLowerCase().trim()
   if (s === 'm' || s.startsWith('meter') || s.startsWith('metre')) return 'm'
   if (s === 'ft' || s.startsWith('feet') || s.startsWith('foot') || s === "'") return 'ft'
   if (s === 'in' || s.startsWith('inch') || s === '"') return 'in'
-  return 'ft'
+  return unitSystem === 'imperial' ? 'ft' : 'm'
 }
 
 module.exports = { analyzeSketch }

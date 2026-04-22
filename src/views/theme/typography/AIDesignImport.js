@@ -11,11 +11,12 @@ const STAGES = [
 
 const BACKEND_BASE = 'http://localhost:3001'
 
-const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35 }) => {
+const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem = 'metric' }) => {
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
   const [depthImageFile, setDepthImageFile] = useState(null)
   const [depthImagePreview, setDepthImagePreview] = useState(null)
+  const [sketchUnitSystem, setSketchUnitSystem] = useState(unitSystem === 'imperial' ? 'imperial' : 'metric')
   const [isDraggingOver, setIsDraggingOver] = useState(false)
   const [isDepthDraggingOver, setIsDepthDraggingOver] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -42,6 +43,7 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35 }) => {
     setImagePreview(null)
     setDepthImageFile(null)
     setDepthImagePreview(null)
+    setSketchUnitSystem(unitSystem === 'imperial' ? 'imperial' : 'metric')
     setError('')
     setResult(null)
     setIsAnalyzing(false)
@@ -135,7 +137,7 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35 }) => {
     }, 110000)
 
     try {
-      const apiResult = await analyzeSketch(imageFile, depthImageFile || null)
+      const apiResult = await analyzeSketch(imageFile, depthImageFile || null, sketchUnitSystem)
 
       if (analyzeWatchdogRef.current) clearTimeout(analyzeWatchdogRef.current)
       if (stageTimerRef.current) clearTimeout(stageTimerRef.current)
@@ -196,6 +198,12 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35 }) => {
         <div className="pc-ai-shell">
           <div className="pc-ai-main">
             <div style={{ display: 'grid', gap: 14 }}>
+              <UnitSelector
+                value={sketchUnitSystem}
+                onChange={setSketchUnitSystem}
+                disabled={isAnalyzing}
+              />
+
               <DropZone
                 label="Deck plan"
                 required
@@ -266,6 +274,7 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35 }) => {
                 items={[
                   ['Plan image', imageFile ? imageFile.name : 'Required'],
                   ['Depth image', depthImageFile ? depthImageFile.name : 'Optional'],
+                  ['Sketch units', sketchUnitSystem === 'imperial' ? 'Imperial' : 'Metric'],
                   ['Canvas grid', `${gridSize}px`],
                 ]}
               />
@@ -473,6 +482,37 @@ const DropZone = ({
           <div style={{ color: 'var(--pc-ink-4)', fontSize: big ? 13 : 12 }}>{emptyHint}</div>
         </div>
       )}
+    </div>
+  </section>
+)
+
+const UnitSelector = ({ value, onChange, disabled }) => (
+  <section>
+    <div style={{ marginBottom: 7 }}>
+      <label style={{ fontSize: 13, fontWeight: 650, color: 'var(--pc-ink-2)' }}>
+        What units did you use?
+        <span style={{ color: 'var(--pc-danger)', marginLeft: 3 }}>*</span>
+      </label>
+    </div>
+    <div className="pc-seg" style={{ width: '100%' }}>
+      <button
+        type="button"
+        className={value === 'metric' ? 'on' : ''}
+        onClick={() => onChange('metric')}
+        disabled={disabled}
+        style={{ flex: 1 }}
+      >
+        Metric
+      </button>
+      <button
+        type="button"
+        className={value === 'imperial' ? 'on' : ''}
+        onClick={() => onChange('imperial')}
+        disabled={disabled}
+        style={{ flex: 1 }}
+      >
+        Imperial
+      </button>
     </div>
   </section>
 )
@@ -959,6 +999,12 @@ DropZone.propTypes = {
   big: PropTypes.bool,
 }
 
+UnitSelector.propTypes = {
+  value: PropTypes.oneOf(['metric', 'imperial']).isRequired,
+  onChange: PropTypes.func.isRequired,
+  disabled: PropTypes.bool,
+}
+
 StageProgress.propTypes = {
   stages: PropTypes.arrayOf(
     PropTypes.shape({
@@ -1032,6 +1078,7 @@ AIDesignImport.propTypes = {
   onClose: PropTypes.func.isRequired,
   onImport: PropTypes.func.isRequired,
   gridSize: PropTypes.number,
+  unitSystem: PropTypes.oneOf(['metric', 'imperial']),
 }
 
 export default AIDesignImport

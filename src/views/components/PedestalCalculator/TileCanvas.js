@@ -16,6 +16,8 @@ const normalizeUserPolygons = (userPolygon) => {
   return []
 }
 
+const pedestalKey = (x, y) => `${Number(x).toFixed(1)},${Number(y).toFixed(1)}`
+
 const TileCanvas = ({
   userPolygon,
   dimensionLabels = [],
@@ -175,71 +177,94 @@ const TileCanvas = ({
     const viewBottom = ((canvas.height - panOffset.y) / zoom) / cmScale
     const viewPad = 100
 
-    // 3. Pedestals (red circles)
-    // Calculate min and max heights for relative scaling
-    const heights = pedestals.map((p) => p.height || 0)
-    const minHeight = Math.min(...heights)
-    const maxHeight = Math.max(...heights)
-    const heightRange = maxHeight - minHeight
-    const hasHeightValues = maxHeight > 0 // Check if any pedestal has a height value
+    // 3. Pedestals
+    const userPedestalKeys = new Set(userPedestals.map((p) => pedestalKey(p.x, p.y)))
+    const pedestalByKey = new Map()
+    const visiblePedestals = []
+    let minHeight = Infinity
+    let maxHeight = -Infinity
 
-    pedestals.forEach((p) => {
-      if (
-        p.x > viewRight + viewPad ||
-        p.x < viewLeft - viewPad ||
-        p.y > viewBottom + viewPad ||
-        p.y < viewTop - viewPad
-      ) {
-        return
-      }
+    if (showRedPedestals || userPedestals.length > 0) {
+      pedestals.forEach((p) => {
+        const key = pedestalKey(p.x, p.y)
+        pedestalByKey.set(key, p)
+        if (
+          p.x > viewRight + viewPad ||
+          p.x < viewLeft - viewPad ||
+          p.y > viewBottom + viewPad ||
+          p.y < viewTop - viewPad
+        ) {
+          return
+        }
 
-      const cx = cmToPx(p.x)
-      const cy = cmToPx(p.y)
+        const isUserSet = userPedestalKeys.has(key)
+        if (!isUserSet && !showRedPedestals) return
 
-      // If this pedestal is user-set, color it green
-      const isUserSet = userPedestals.some((up) => {
-        const dx = Math.abs(up.x - p.x)
-        const dy = Math.abs(up.y - p.y)
-        // Use a more generous tolerance for coordinate comparison
-        return dx < 0.1 && dy < 0.1
+        const height = p.height || 0
+        if (height < minHeight) minHeight = height
+        if (height > maxHeight) maxHeight = height
+        visiblePedestals.push({ ...p, isUserSet })
       })
+    }
 
-      // Skip red pedestals if showRedPedestals is false
-      if (!isUserSet && !showRedPedestals) {
-        return
-      }
+    const heightRange = maxHeight - minHeight
+    const hasHeightValues = Number.isFinite(maxHeight) && maxHeight > 0
+    const useFastDots = visiblePedestals.length > 5000 || zoom < 0.08
+    const drawShadows = hasHeightValues && !useFastDots && visiblePedestals.length <= 2000
 
-      // Only draw shadow if we have height values and this pedestal has a height
-      if (hasHeightValues && p.height > 0) {
-        // Calculate relative height (0 to 1) within this project's range
-        const relativeHeight = heightRange > 0 ? (p.height - minHeight) / heightRange : 0.5
-
-        // Draw shadow first
-        const shadowSize = Math.max(8, Math.min(20, 8 + relativeHeight * 12)) // Base size + relative scaling
-        const shadowOpacity = Math.max(0.1, Math.min(0.3, 0.1 + relativeHeight * 0.2)) // Base opacity + relative scaling
-
+    if (drawShadows) {
+      visiblePedestals.forEach((p) => {
+        if ((p.height || 0) <= 0) return
+        const relativeHeight = heightRange > 0 ? ((p.height || 0) - minHeight) / heightRange : 0.5
+        const shadowSize = Math.max(8, Math.min(20, 8 + relativeHeight * 12))
+        const shadowOpacity = Math.max(0.1, Math.min(0.3, 0.1 + relativeHeight * 0.2))
         ctx.beginPath()
-        ctx.arc(cx, cy + 4, shadowSize, 0, 2 * Math.PI)
+        ctx.arc(cmToPx(p.x), cmToPx(p.y) + 4, shadowSize, 0, 2 * Math.PI)
         ctx.fillStyle = `rgba(0, 0, 0, ${shadowOpacity})`
         ctx.fill()
-      }
+      })
+    }
 
-      // Draw pedestal on top
+    if (useFastDots) {
+      const dotSize = Math.min(80, Math.max(4, 2 / Math.max(zoom, 0.02)))
+      ctx.fillStyle = '#dc2626'
+      visiblePedestals.forEach((p) => {
+        if (p.isUserSet) return
+        ctx.fillRect(cmToPx(p.x) - dotSize / 2, cmToPx(p.y) - dotSize / 2, dotSize, dotSize)
+      })
+      ctx.fillStyle = '#16a34a'
+      visiblePedestals.forEach((p) => {
+        if (!p.isUserSet) return
+        ctx.fillRect(cmToPx(p.x) - dotSize / 2, cmToPx(p.y) - dotSize / 2, dotSize, dotSize)
+      })
+    } else {
       ctx.beginPath()
-      ctx.arc(cx, cy, 4, 0, 2 * Math.PI)
-
-      ctx.fillStyle = isUserSet ? '#16a34a' : '#dc2626'
+      visiblePedestals.forEach((p) => {
+        if (p.isUserSet) return
+        const cx = cmToPx(p.x)
+        const cy = cmToPx(p.y)
+        ctx.moveTo(cx + 4, cy)
+        ctx.arc(cx, cy, 4, 0, 2 * Math.PI)
+      })
+      ctx.fillStyle = '#dc2626'
       ctx.fill()
-    })
+
+      ctx.beginPath()
+      visiblePedestals.forEach((p) => {
+        if (!p.isUserSet) return
+        const cx = cmToPx(p.x)
+        const cy = cmToPx(p.y)
+        ctx.moveTo(cx + 4, cy)
+        ctx.arc(cx, cy, 4, 0, 2 * Math.PI)
+      })
+      ctx.fillStyle = '#16a34a'
+      ctx.fill()
+    }
 
     // Draw AI/manual anchor overlays so imported AI depth locations remain
     // visible even when they snap onto an existing pedestal node.
     userPedestals.forEach((anchor) => {
-      const overlappingPedestal = pedestals.find((p) => {
-        const dx = Math.abs(p.x - anchor.x)
-        const dy = Math.abs(p.y - anchor.y)
-        return dx < 0.1 && dy < 0.1
-      })
+      const overlappingPedestal = pedestalByKey.get(pedestalKey(anchor.x, anchor.y))
 
       const anchorX = overlappingPedestal ? overlappingPedestal.x : anchor.x
       const anchorY = overlappingPedestal ? overlappingPedestal.y : anchor.y

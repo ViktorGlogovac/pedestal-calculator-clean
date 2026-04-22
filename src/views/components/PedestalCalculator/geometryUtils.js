@@ -175,13 +175,29 @@ export function dedupeAndSnapPedestals(pedestals, polygon, tolerance = 0.35) {
     return snappedVertex ? { ...pedestal, x: snappedVertex.x, y: snappedVertex.y } : { ...pedestal }
   })
 
+  // Spatial hash for O(n) lookup instead of O(n²) linear scan.
+  // Cell size = tolerance so nearby pedestals land in adjacent cells.
+  const inv = 1 / Math.max(tolerance, EPSILON)
+  const spatialMap = new Map() // "cx,cy" -> cluster index
   const clusters = []
 
   normalized.forEach((pedestal) => {
-    const cluster = clusters.find(
-      (entry) => distanceBetweenPoints(entry.anchor, pedestal) <= tolerance,
-    )
-    if (cluster) {
+    const cx = Math.floor(pedestal.x * inv)
+    const cy = Math.floor(pedestal.y * inv)
+    let foundIdx = -1
+
+    outer: for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const idx = spatialMap.get(`${cx + dx},${cy + dy}`)
+        if (idx !== undefined && distanceBetweenPoints(clusters[idx].anchor, pedestal) <= tolerance) {
+          foundIdx = idx
+          break outer
+        }
+      }
+    }
+
+    if (foundIdx !== -1) {
+      const cluster = clusters[foundIdx]
       cluster.members.push(pedestal)
       const snappedVertex = getClosestPolygonVertex(cluster.anchor, polygon, tolerance)
       if (!snappedVertex) {
@@ -190,14 +206,20 @@ export function dedupeAndSnapPedestals(pedestals, polygon, tolerance = 0.35) {
           x: (cluster.anchor.x * (count - 1) + pedestal.x) / count,
           y: (cluster.anchor.y * (count - 1) + pedestal.y) / count,
         }
+        // Re-register anchor cell after averaging
+        spatialMap.set(
+          `${Math.floor(cluster.anchor.x * inv)},${Math.floor(cluster.anchor.y * inv)}`,
+          foundIdx,
+        )
       }
-      return
+    } else {
+      const idx = clusters.length
+      clusters.push({
+        anchor: { x: pedestal.x, y: pedestal.y },
+        members: [pedestal],
+      })
+      spatialMap.set(`${cx},${cy}`, idx)
     }
-
-    clusters.push({
-      anchor: { x: pedestal.x, y: pedestal.y },
-      members: [pedestal],
-    })
   })
 
   return clusters.map(({ anchor, members }) => {

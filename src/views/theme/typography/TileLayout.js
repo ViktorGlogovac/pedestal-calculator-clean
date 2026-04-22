@@ -13,6 +13,7 @@ import {
 
 import TileCanvas from '../../components/PedestalCalculator/TileCanvas'
 import TileOptionsPanel from '../../components/PedestalCalculator/TileOptionsPanel'
+import LoadingOverlay from '../../components/PedestalCalculator/LoadingOverlay'
 
 const TILE_TYPES = [
   { id: 'tile16-16', name: 'Tile 16×16 in', width: 40.64, height: 40.64 },
@@ -173,8 +174,9 @@ const TileLayout = ({
   const [selectedTileTypeState, setSelectedTileTypeState] = useState(getInitialSelectedTileType())
   const [isOffsetState, setIsOffsetState] = useState(getInitialIsOffset())
   const [orientationState, setOrientationState] = useState(getInitialOrientation())
-  const [showRedPedestals, setShowRedPedestals] = useState(true)
+  const [showRedPedestals, setShowRedPedestals] = useState(false)
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(false)
+  const [isComputing, setIsComputing] = useState(false)
 
   // Save state to localStorage whenever it changes
   useEffect(() => {
@@ -627,6 +629,13 @@ const TileLayout = ({
           used[group[i]._idx] = true
           for (let j = i + 1; j < group.length; j++) {
             if (used[group[j]._idx]) continue
+            // Since group is sorted by primary axis, once the gap exceeds maxDist
+            // all remaining elements are also out of range.
+            const primaryGap =
+              orientation === 'landscape'
+                ? group[j].x - group[i].x
+                : group[j].y - group[i].y
+            if (primaryGap > maxDist + EPSILON) break
             const dx = group[i].x - group[j].x
             const dy = group[i].y - group[j].y
             const dist = Math.sqrt(dx * dx + dy * dy)
@@ -676,7 +685,12 @@ const TileLayout = ({
 
   useEffect(() => {
     if (points.length > 0) {
-      generateTilesAndPedestals()
+      setIsComputing(true)
+      const timer = setTimeout(() => {
+        generateTilesAndPedestals()
+        setIsComputing(false)
+      }, 0)
+      return () => clearTimeout(timer)
     } else {
       setTiles([])
       setPedestals([])
@@ -703,6 +717,7 @@ const TileLayout = ({
           minWidth: 0,
           overflow: 'hidden',
           background: 'var(--pc-canvas-bg)',
+          position: 'relative',
         }}
       >
         <TileCanvas
@@ -722,6 +737,7 @@ const TileLayout = ({
           width={canvasSize.width}
           height={canvasSize.height}
         />
+        <LoadingOverlay visible={isComputing} label="Computing layout…" />
       </div>
 
       {/* Side Options Panel */}

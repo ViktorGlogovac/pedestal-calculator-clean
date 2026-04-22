@@ -2,8 +2,17 @@
   "permissions": {
     "allow": [
       "Bash(npm run *)",
-      "Bash(npx vite *)",
-      "Bash(node *)"
+      "Bash(curl *)",
+      "Bash(awk '{print $2}')",
+      "Bash(xargs ps *)",
+      "Bash(node --check /Users/viktorglogovac/pedestal-calculator-clean/server/index.js)",
+      "Bash(node --check /Users/viktorglogovac/pedestal-calculator-clean/server/routes/sketch.js)",
+      "Bash(xxd)",
+      "Bash(node -e \"require\\('./server/routes/sketch'\\)\")",
+      "Bash(node *)",
+      "Bash(ps *)",
+      "Bash(kill 468 467)",
+      "Bash(npx --yes acorn --ecma2020 --module src/views/components/PedestalCalculator/geometryUtils.js)"
     ]
   }
 }

@@ -47,6 +47,7 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
   const startedAt = Date.now()
   const warnings = []
   const userNotes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : ''
+  const unitSystem = normalizeUnitSystem(req.body?.unitSystem)
   console.log(`[sketch] /analyze start files=${Object.keys(req.files || {}).join(',') || 'none'}`)
 
   // ── Stage 1: Ingest ───────────────────────────────────────────────────────
@@ -90,10 +91,11 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
   // path is used for the main shape.
   let codexResult = null
   try {
-    codexResult = await analyzeSketch(originalPath, userNotes)
+    codexResult = await analyzeSketch(originalPath, userNotes, unitSystem)
     debugData.stages.codexAnalysis = {
       corners: codexResult.outerBoundary.length,
       unit: codexResult.unit,
+      requestedUnitSystem: unitSystem,
       segmentCount: codexResult.segments.length,
       imageSource: 'original',
     }
@@ -143,6 +145,7 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
 
     const deckPlan = {
       unit: codexResult.unit,
+      requestedUnitSystem: unitSystem,
       outerBoundary: codexResult.outerBoundary,
       cutouts: [],
       segments,
@@ -1573,6 +1576,10 @@ function isUnitCompatible(itemUnit, planUnit) {
     return u
   }
   return norm(itemUnit) === norm(planUnit)
+}
+
+function normalizeUnitSystem(value) {
+  return String(value || '').toLowerCase() === 'imperial' ? 'imperial' : 'metric'
 }
 
 module.exports = router

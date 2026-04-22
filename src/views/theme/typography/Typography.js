@@ -33,7 +33,7 @@ const PedestalCalculatorMain = () => {
   const [zoom, setZoom] = useState(1)
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 })
   const setSmoothZoom = useCallback((zoomValue) => {
-    const clampZoom = (value) => Math.min(4, Math.max(0.25, value))
+    const clampZoom = (value) => Math.min(4, Math.max(0.02, value))
     setZoom((prev) => clampZoom(typeof zoomValue === 'function' ? zoomValue(prev) : zoomValue))
   }, [])
 
@@ -603,6 +603,7 @@ const PedestalCalculatorMain = () => {
         onClose={() => setAiImportVisible(false)}
         onImport={handleAIImport}
         gridSize={gridSize}
+        unitSystem={unitSystem}
       />
     </div>
   )
@@ -790,7 +791,6 @@ const MetricsDock = ({ metrics, step, totalSteps, isAnimating, onBack, onNext, o
     <MetricItem label="Pedestals" value={metrics.pedestals} unit="pcs" />
     <MetricItem label="Tiles" value={metrics.tiles} unit="pcs" />
     <MetricItem label="Avg Height" value={metrics.averageHeight} unit={metrics.heightUnit} />
-    <MetricItem label="Estimate" value={metrics.estimate} unit="AED" accent />
     <div style={{ flex: 1 }} />
     <button className="pc-btn" type="button" onClick={onBack} disabled={step === 1 || isAnimating}>
       Previous

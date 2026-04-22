@@ -22,6 +22,7 @@
   --pc-canvas-bg: #faf9f6;
   --pc-canvas-grid: #e5e3dd;
   --pc-canvas-grid-major: #cfcdc5;
+  --pc-overlay-bg: rgba(250, 249, 246, 0.86);
   --pc-shape-fill: oklch(62% 0.12 210 / 0.08);
   --pc-shape-stroke: oklch(38% 0.08 210);
   --pc-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
@@ -46,6 +47,7 @@
   --pc-canvas-bg: #141412;
   --pc-canvas-grid: #25251f;
   --pc-canvas-grid-major: #2e2e28;
+  --pc-overlay-bg: rgba(20, 20, 18, 0.86);
   --pc-shape-fill: oklch(62% 0.12 210 / 0.16);
   --pc-shape-stroke: oklch(72% 0.12 210);
   --pc-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -483,29 +485,11 @@
   }
 
   .pc-auth-deck {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 8px;
     padding: 32px 0;
-    .tile {
-      aspect-ratio: 1;
-      background: linear-gradient(135deg, rgba(245, 244, 239, 0.08), rgba(245, 244, 239, 0.02));
-      border: 1px solid rgba(245, 244, 239, 0.08);
-      border-radius: 4px;
-      position: relative;
-    }
-    .tile.ped::after {
-      content: '';
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--pc-accent);
-      box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.3);
-      transform: translate(-50%, -50%);
-    }
+    // SVG fills the container; height is derived from the 6×5 tile viewBox aspect ratio
+    aspect-ratio: 984 / 822;
+    width: 100%;
+    overflow: hidden;
   }
   .pc-auth-testimonial {
     border-left: 2px solid var(--pc-accent);

@@ -1,9 +1,10 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react'
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import PropTypes from 'prop-types'
 import { Delaunay } from 'd3-delaunay'
 import polygonClipping from 'polygon-clipping'
 import TileCanvas from '../../components/PedestalCalculator/TileCanvas'
 import PedestalEditor from '../../components/PedestalCalculator/PedestalEditor'
+import LoadingOverlay from '../../components/PedestalCalculator/LoadingOverlay'
 import {
   findContainingTriangle,
   barycentricCoordinates,
@@ -339,6 +340,8 @@ const PedestalHeightAdjuster = ({
       onDataCalculated({ ...calcData, pedestals: zeroed, adjustedPedestals: {} })
     }
   }
+
+  const [isComputing, setIsComputing] = useState(false)
 
   // For editing pedestal
   const [editingPedestalIndex, setEditingPedestalIndex] = useState(null)
@@ -970,17 +973,22 @@ const PedestalHeightAdjuster = ({
     const cps = buildControlPoints(points, adjustedPedestals)
     if (cps.length < 3) return
 
-    const newPeds = recalculatePedestalHeights(cps, basePedestals)
-    if (arePedestalListsEqual(newPeds, pedestals)) return
+    setIsComputing(true)
+    const timer = setTimeout(() => {
+      const newPeds = recalculatePedestalHeights(cps, basePedestals)
+      setIsComputing(false)
+      if (arePedestalListsEqual(newPeds, pedestals)) return
 
-    setPedestals(newPeds)
+      setPedestals(newPeds)
 
-    if (onDataCalculated && !arePedestalListsEqual(newPeds, calcData?.pedestals || [])) {
-      onDataCalculated({
-        ...calcData,
-        pedestals: newPeds,
-      })
-    }
+      if (onDataCalculated && !arePedestalListsEqual(newPeds, calcData?.pedestals || [])) {
+        onDataCalculated({
+          ...calcData,
+          pedestals: newPeds,
+        })
+      }
+    }, 0)
+    return () => clearTimeout(timer)
   }, [
     points,
     adjustedPedestals,
@@ -991,8 +999,11 @@ const PedestalHeightAdjuster = ({
     pedestals,
   ])
 
-  // For visual debug: collect edge pedestals
-  const edgePedestals = pedestals.filter((p) => isPointOnPolygonEdge(p, userPolygon, 0.2))
+  // Memoized to avoid recomputing 65k+ pedestals on every pan/zoom render
+  const edgePedestals = useMemo(
+    () => pedestals.filter((p) => isPointOnPolygonEdge(p, userPolygon, 0.2)),
+    [pedestals, userPolygon],
+  )
   const visibleAnchors = (() => {
     const merged = new Map()
     aiDepthAnchors.forEach((anchor) => merged.set(getPedestalKey(anchor.x, anchor.y), anchor))
@@ -1090,6 +1101,7 @@ const PedestalHeightAdjuster = ({
           minWidth: 0,
           overflow: 'hidden',
           background: 'var(--pc-canvas-bg)',
+          position: 'relative',
         }}
       >
         <TileCanvas
@@ -1116,6 +1128,7 @@ const PedestalHeightAdjuster = ({
           width={canvasSize.width}
           height={canvasSize.height}
         />
+        <LoadingOverlay visible={isComputing} label="Computing heights…" />
       </div>
 
       {/* Pedestal Editor (Modal) */}

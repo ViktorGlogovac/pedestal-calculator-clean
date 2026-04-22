@@ -20,7 +20,7 @@ const BACKEND_BASE = '/api/sketch'
  *   error?: string
  * }>}
  */
-async function analyzeSketch(imageFile, depthImageFile = null) {
+async function analyzeSketch(imageFile, depthImageFile = null, unitSystem = 'metric') {
   if (!imageFile) {
     return {
       success: false,
@@ -33,6 +33,7 @@ async function analyzeSketch(imageFile, depthImageFile = null) {
 
   const formData = new FormData()
   formData.append('image', imageFile)
+  formData.append('unitSystem', unitSystem === 'imperial' ? 'imperial' : 'metric')
   if (imageFile._userNotes) {
     formData.append('notes', imageFile._userNotes)
   }
