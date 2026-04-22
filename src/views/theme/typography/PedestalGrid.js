@@ -7,6 +7,7 @@ import LinePopup from '../../components/PedestalCalculator/LinePopup'
 
 const CANVAS_WIDTH = 900
 const CANVAS_HEIGHT = 600
+
 const CELL_PHYSICAL_LENGTH = 100 // each grid cell = 100 cm
 const LINE_WIDTH = 2
 const POINT_RADIUS = 5
@@ -103,8 +104,22 @@ const PedestalGrid = ({
   // Brief highlight after creating a new shape
   const [highlightNewShape, setHighlightNewShape] = useState(false)
 
-  // Canvas ref
+  // Canvas ref and dynamic sizing
   const canvasRef = useRef(null)
+  const canvasContainerRef = useRef(null)
+  const [canvasSize, setCanvasSize] = useState({ width: CANVAS_WIDTH, height: CANVAS_HEIGHT })
+
+  // Resize canvas to fill container
+  useEffect(() => {
+    const el = canvasContainerRef.current
+    if (!el) return
+    const observer = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect
+      if (width > 0 && height > 0) setCanvasSize({ width: Math.floor(width), height: Math.floor(height) })
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
   // Convenience
   const activeShape = shapes[activeShapeIndex]
@@ -668,16 +683,17 @@ const PedestalGrid = ({
   //  Render
   //------------------------------------------------------------------
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: '14px' }}>
+    <div style={{ display: 'flex', alignItems: 'stretch', gap: '14px', flex: 1, minHeight: 0 }}>
       {/* Canvas area */}
       <div
+        ref={canvasContainerRef}
         className="pc-panel"
         onMouseDown={() => setContextMenu(null)}
         style={{
           position: 'relative',
-          flex: '1 1 640px',
+          flex: '1 1 0',
           minWidth: 0,
-          overflow: 'auto',
+          overflow: 'hidden',
           background: 'var(--pc-canvas-bg)',
         }}
       >
@@ -723,8 +739,8 @@ const PedestalGrid = ({
             onContextMenuOpen: handleContextMenuOpen,
           }}
           canvasRef={canvasRef}
-          width={CANVAS_WIDTH}
-          height={CANVAS_HEIGHT}
+          width={canvasSize.width}
+          height={canvasSize.height}
         />
 
         {drawingPaused && activeShape?.points.length > 0 && !activeShape?.isLoopClosed && (

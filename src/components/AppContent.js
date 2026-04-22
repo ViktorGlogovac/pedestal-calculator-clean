@@ -5,7 +5,7 @@ import routes from '../routes'
 
 const AppContent = () => {
   return (
-    <div style={{ width: '100%' }}>
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <Suspense
         fallback={
           <div style={{ paddingTop: 40, textAlign: 'center' }}>

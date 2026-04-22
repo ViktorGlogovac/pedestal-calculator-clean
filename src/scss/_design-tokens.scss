@@ -539,17 +539,15 @@
 
 // Workspace chrome: topbar, rails, metrics dock for the calculator route.
 .pc-workspace {
-  min-height: calc(100vh - 6rem);
+  flex: 1;
+  min-height: 0;
   background: var(--pc-bg);
   color: var(--pc-ink);
   font-family: var(--pc-font-sans);
   font-size: 13px;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--pc-line);
-  border-radius: var(--pc-radius-lg);
   overflow: hidden;
-  box-shadow: var(--pc-shadow-2);
 
   .pc-topbar {
     display: flex;
@@ -700,7 +698,9 @@
 
   .pc-canvas-inner {
     flex: 1;
-    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     padding: 16px;
     min-height: 0;
   }
@@ -744,29 +744,7 @@
     box-shadow: var(--pc-shadow-1);
   }
 
-  .pc-step-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    padding: 12px 16px;
-    background: var(--pc-surface);
-    border-top: 1px solid var(--pc-line);
-  }
-
   @media (max-width: 1120px) {
-    min-height: auto;
-
-    .pc-workspace-body {
-      flex-direction: column;
-    }
-
-    .pc-rail {
-      width: 100%;
-      flex-basis: auto;
-      border-right: 0;
-      border-bottom: 1px solid var(--pc-line);
-    }
-
     .pc-metrics-dock {
       flex-wrap: wrap;
       gap: 12px 20px;
@@ -785,11 +763,5 @@
       overflow-x: auto;
     }
 
-    .pc-step-footer {
-      justify-content: stretch;
-      > button {
-        flex: 1;
-      }
-    }
   }
 }

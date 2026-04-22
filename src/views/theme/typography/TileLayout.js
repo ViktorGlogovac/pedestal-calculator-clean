@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { Delaunay } from 'd3-delaunay'
 import polygonClipping from 'polygon-clipping'
 import PropTypes from 'prop-types'
@@ -63,6 +63,20 @@ const TileLayout = ({
   panOffset,
   setPanOffset,
 }) => {
+  const canvasContainerRef = useRef(null)
+  const [canvasSize, setCanvasSize] = useState({ width: 900, height: 600 })
+
+  useEffect(() => {
+    const el = canvasContainerRef.current
+    if (!el) return
+    const observer = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect
+      if (width > 0 && height > 0) setCanvasSize({ width: Math.floor(width), height: Math.floor(height) })
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
   const [selectedTileType, setSelectedTileType] = useState(TILE_TYPES[0])
   const [isOffset, setIsOffset] = useState('none')
   const [showSubTiles, setShowSubTiles] = useState(true)
@@ -616,20 +630,20 @@ const TileLayout = ({
     <div
       style={{
         display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'flex-start',
+        alignItems: 'stretch',
         gap: '16px',
-        position: 'relative',
-        overflow: 'visible',
+        flex: 1,
+        minHeight: 0,
       }}
     >
       {/* The Canvas */}
       <div
+        ref={canvasContainerRef}
         className="pc-panel"
         style={{
-          flex: '1 1 640px',
+          flex: '1 1 0',
           minWidth: 0,
-          overflow: 'auto',
+          overflow: 'hidden',
           background: 'var(--pc-canvas-bg)',
         }}
       >
@@ -641,23 +655,25 @@ const TileLayout = ({
           showSubTiles={true}
           unitSystem={unitSystem}
           cmToPx={cmToPx}
-          onPedestalClick={() => {}} // No pedestal editing in this step
+          onPedestalClick={() => {}}
           zoom={zoom}
           panOffset={panOffset}
           setPanOffset={setPanOffset}
           setZoom={setZoom}
           showRedPedestals={showRedPedestals}
+          width={canvasSize.width}
+          height={canvasSize.height}
         />
       </div>
 
       {/* Side Options Panel */}
       <div
         style={{
-          overflow: 'visible',
+          overflow: 'auto',
           width: isPanelCollapsed ? '48px' : 'min(280px, 100%)',
           maxWidth: '100%',
           transition: 'width 0.3s ease',
-          flex: '0 1 280px',
+          flex: '0 0 280px',
           position: 'relative',
         }}
       >

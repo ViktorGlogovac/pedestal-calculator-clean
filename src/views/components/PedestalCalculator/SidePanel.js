@@ -28,13 +28,12 @@ function SidePanel(props) {
       style={{
         width: 'min(280px, 100%)',
         maxWidth: '100%',
-        maxHeight: 'min(640px, calc(100vh - 220px))',
         padding: 14,
         background: 'var(--pc-surface)',
         color: 'var(--pc-ink)',
         overflowY: 'auto',
         boxSizing: 'border-box',
-        flex: '0 1 280px',
+        flex: '0 0 280px',
       }}
     >
       {onShowInstructions && (

@@ -45,6 +45,8 @@ const TileCanvas = ({
   onSelectionMove,
   onSelectionEnd,
   showRedPedestals = true,
+  width = CANVAS_WIDTH,
+  height = CANVAS_HEIGHT,
 }) => {
   const canvasRef = useRef(null)
   const isPanningRef = useRef(false)
@@ -418,8 +420,8 @@ const TileCanvas = ({
   return (
     <canvas
       ref={canvasRef}
-      width={CANVAS_WIDTH}
-      height={CANVAS_HEIGHT}
+      width={width}
+      height={height}
       style={{
         border: '0',
         borderRadius: '10px',

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import PropTypes from 'prop-types'
 import { Delaunay } from 'd3-delaunay'
 import polygonClipping from 'polygon-clipping'
@@ -192,6 +192,21 @@ const PedestalHeightAdjuster = ({
   panOffset,
   setPanOffset,
 }) => {
+  const canvasContainerRef = useRef(null)
+  const [canvasSize, setCanvasSize] = useState({ width: 900, height: 600 })
+
+  useEffect(() => {
+    const el = canvasContainerRef.current
+    if (!el) return
+    const observer = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect
+      if (width > 0 && height > 0) setCanvasSize({ width: Math.floor(width), height: Math.floor(height) })
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  const isClearingRef = useRef(false)
   const [pedestals, setPedestals] = useState(calcData.pedestals || [])
   const [userPolygon, setUserPolygon] = useState(calcData.userPolygon || [])
   const [tiles, setTiles] = useState(calcData.tiles || [])
@@ -255,6 +270,7 @@ const PedestalHeightAdjuster = ({
   }, [dismissedAiAnchors])
 
   useEffect(() => {
+    if (isClearingRef.current) return
     try {
       const rawDepthPoints = localStorage.getItem('aiDepthPoints')
       if (!rawDepthPoints) return
@@ -277,6 +293,7 @@ const PedestalHeightAdjuster = ({
   }, [calcData?.pedestals, calcData?.userPolygon, dismissedAiAnchors, gridSize])
 
   useEffect(() => {
+    if (isClearingRef.current) return
     try {
       const rawDepthPoints = localStorage.getItem('aiDepthPoints')
       if (!rawDepthPoints || !calcData?.pedestals?.length) {
@@ -301,40 +318,25 @@ const PedestalHeightAdjuster = ({
 
   // Function to clear saved adjusted pedestals
   const clearSavedPedestals = () => {
-    try {
-      localStorage.removeItem('pedestalHeightAdjuster_adjustedPedestals')
-      localStorage.removeItem(DISMISSED_AI_ANCHORS_KEY)
-      const emptyAdjustedPedestals = []
-      setAdjustedPedestals(emptyAdjustedPedestals)
-      setDismissedAiAnchors([])
+    localStorage.removeItem('pedestalHeightAdjuster_adjustedPedestals')
+    localStorage.removeItem('pedestal_adjustedPedestals')
+    localStorage.removeItem(DISMISSED_AI_ANCHORS_KEY)
+    // Remove AI depth points so re-seeding effects don't restore AI heights.
+    localStorage.removeItem('aiDepthPoints')
 
-      // Recalculate all pedestal heights without any manual adjustments
-      const cps = buildControlPoints(points, emptyAdjustedPedestals)
-      if (cps.length >= 3) {
-        const recalculatedPedestals = recalculatePedestalHeights(cps, calcData.pedestals || [])
-        setPedestals(recalculatedPedestals)
+    // Block all height-related effects for this render cycle so they can't
+    // undo the clear (recalculation, AI re-seeding). Only the recalculation
+    // effect clears the flag.
+    isClearingRef.current = true
+    setAdjustedPedestals([])
+    setDismissedAiAnchors([])
+    setAiDepthAnchors([])
 
-        // Update calcData with recalculated pedestals
-        if (onDataCalculated) {
-          onDataCalculated({
-            ...calcData,
-            pedestals: recalculatedPedestals,
-            adjustedPedestals: {},
-          })
-        }
-      } else {
-        // Fallback to original pedestals if not enough control points
-        setPedestals(calcData.pedestals || [])
-        if (onDataCalculated) {
-          onDataCalculated({
-            ...calcData,
-            pedestals: calcData.pedestals || [],
-            adjustedPedestals: {},
-          })
-        }
-      }
-    } catch (error) {
-      console.warn('Failed to clear adjusted pedestals from localStorage:', error)
+    const zeroed = pedestals.map((p) => ({ ...p, height: 0 }))
+    setPedestals(zeroed)
+
+    if (onDataCalculated) {
+      onDataCalculated({ ...calcData, pedestals: zeroed, adjustedPedestals: {} })
     }
   }
 
@@ -954,6 +956,12 @@ const PedestalHeightAdjuster = ({
 
   // Update the effect hook to properly handle recalculation
   useEffect(() => {
+    // Skip if a clear just happened — heights were already zeroed synchronously.
+    if (isClearingRef.current) {
+      isClearingRef.current = false
+      return
+    }
+
     if (!points?.length) return
 
     const basePedestals = calcData?.pedestals || []
@@ -1067,19 +1075,20 @@ const PedestalHeightAdjuster = ({
     <div
       style={{
         display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'flex-start',
+        alignItems: 'stretch',
         gap: '16px',
-        position: 'relative',
+        flex: 1,
+        minHeight: 0,
       }}
     >
       {/* The Canvas */}
       <div
+        ref={canvasContainerRef}
         className="pc-panel"
         style={{
-          flex: '1 1 640px',
+          flex: '1 1 0',
           minWidth: 0,
-          overflow: 'auto',
+          overflow: 'hidden',
           background: 'var(--pc-canvas-bg)',
         }}
       >
@@ -1104,6 +1113,8 @@ const PedestalHeightAdjuster = ({
           onSelectionStart={handleSelectionStart}
           onSelectionMove={handleSelectionMove}
           onSelectionEnd={handleSelectionEnd}
+          width={canvasSize.width}
+          height={canvasSize.height}
         />
       </div>
 
@@ -1149,10 +1160,9 @@ const PedestalHeightAdjuster = ({
           padding: 14,
           background: 'var(--pc-surface)',
           color: 'var(--pc-ink)',
-          maxHeight: 'min(640px, calc(100vh - 220px))',
           overflowY: 'auto',
           boxSizing: 'border-box',
-          flex: '0 1 280px',
+          flex: '0 0 280px',
         }}
       >
         {onShowInstructions && (

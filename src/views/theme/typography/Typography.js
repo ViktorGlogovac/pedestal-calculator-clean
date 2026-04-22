@@ -472,30 +472,6 @@ const PedestalCalculatorMain = () => {
 
         <main className="pc-canvas-area">
           <div className="pc-canvas-inner" data-tour="canvas">
-            <div
-              style={{
-                marginBottom: 12,
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 12,
-                flexWrap: 'wrap',
-              }}
-            >
-              <div>
-                <div className="pc-rail-label" style={{ marginBottom: 2 }}>
-                  Current Mode
-                </div>
-                <div style={{ fontSize: 18, fontWeight: 650, color: 'var(--pc-ink)' }}>
-                  {currentStep.label}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span className="pc-chip pc-mono">{unitSystem}</span>
-                <span className="pc-chip pc-mono">Zoom {Math.round(zoom * 100)}%</span>
-              </div>
-            </div>
-
             {step === 1 && (
               <PedestalGrid
                 key={`project-${projectRevision}-step-1`}
@@ -551,40 +527,18 @@ const PedestalCalculatorMain = () => {
               />
             )}
           </div>
-
-          <div className="pc-step-footer">
-            <button
-              className="pc-btn"
-              type="button"
-              onClick={handleBack}
-              disabled={step === 1 || isAnimating}
-            >
-              Previous
-            </button>
-            {step === totalSteps ? (
-              <button
-                className="pc-btn primary"
-                type="button"
-                onClick={handlePrintInvoice}
-                disabled={isAnimating}
-              >
-                Print Invoice
-              </button>
-            ) : (
-              <button
-                className="pc-btn primary"
-                type="button"
-                onClick={handleNext}
-                disabled={isAnimating}
-              >
-                Next
-              </button>
-            )}
-          </div>
         </main>
       </div>
 
-      <MetricsDock metrics={metrics} />
+      <MetricsDock
+        metrics={metrics}
+        step={step}
+        totalSteps={totalSteps}
+        isAnimating={isAnimating}
+        onBack={handleBack}
+        onNext={handleNext}
+        onPrint={handlePrintInvoice}
+      />
 
       <Modal
         visible={showInstructions}
@@ -841,7 +795,7 @@ const RailStat = ({ label, value }) => (
   </div>
 )
 
-const MetricsDock = ({ metrics }) => (
+const MetricsDock = ({ metrics, step, totalSteps, isAnimating, onBack, onNext, onPrint }) => (
   <div className="pc-metrics-dock" data-tour="metrics">
     <MetricItem label="Area" value={metrics.area} unit={metrics.areaUnit} />
     <MetricItem label="Perimeter" value={metrics.perimeter} unit={metrics.lengthUnit} />
@@ -849,6 +803,19 @@ const MetricsDock = ({ metrics }) => (
     <MetricItem label="Tiles" value={metrics.tiles} unit="pcs" />
     <MetricItem label="Avg Height" value={metrics.averageHeight} unit={metrics.heightUnit} />
     <MetricItem label="Estimate" value={metrics.estimate} unit="AED" accent />
+    <div style={{ flex: 1 }} />
+    <button className="pc-btn" type="button" onClick={onBack} disabled={step === 1 || isAnimating}>
+      Previous
+    </button>
+    {step === totalSteps ? (
+      <button className="pc-btn primary" type="button" onClick={onPrint} disabled={isAnimating}>
+        Print Invoice
+      </button>
+    ) : (
+      <button className="pc-btn primary" type="button" onClick={onNext} disabled={isAnimating}>
+        Next
+      </button>
+    )}
   </div>
 )
 
@@ -911,6 +878,12 @@ RailStat.propTypes = {
 
 MetricsDock.propTypes = {
   metrics: metricsPropType.isRequired,
+  step: PropTypes.number.isRequired,
+  totalSteps: PropTypes.number.isRequired,
+  isAnimating: PropTypes.bool.isRequired,
+  onBack: PropTypes.func.isRequired,
+  onNext: PropTypes.func.isRequired,
+  onPrint: PropTypes.func.isRequired,
 }
 
 MetricItem.propTypes = {
