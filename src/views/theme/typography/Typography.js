@@ -330,13 +330,9 @@ const PedestalCalculatorMain = () => {
         })),
       }))
 
-      // Reset calcData when shape structure changes significantly:
-      // - All shapes are empty (no points)
-      // - Number of shapes changed (shape was deleted)
       const hasAnyPoints = converted.some((shape) => shape.points && shape.points.length > 0)
       setPoints((prevPoints) => {
         const shapeCountChanged = prevPoints.length !== converted.length
-
         if (!hasAnyPoints || shapeCountChanged) {
           setCalcData({
             tiles: [],
@@ -346,11 +342,7 @@ const PedestalCalculatorMain = () => {
             adjustedPedestals: {},
           })
         }
-
-        if (JSON.stringify(prevPoints) === JSON.stringify(converted)) {
-          return prevPoints
-        }
-
+        if (JSON.stringify(prevPoints) === JSON.stringify(converted)) return prevPoints
         return converted
       })
     },
@@ -358,28 +350,21 @@ const PedestalCalculatorMain = () => {
   )
 
   const handleAIImport = useCallback((shapes, depthPoints = []) => {
-    // Write shapes to localStorage so PedestalGrid picks them up on remount
     localStorage.setItem('pedestalGrid_shapes', JSON.stringify(shapes))
     localStorage.setItem('pedestalGrid_activeShapeIndex', '0')
-    // AI-imported canvasShapes are generated server-side at 35 px = 1 m.
-    // Keep the editor gridSize aligned with that scale or imported
-    // measurements will be interpreted incorrectly.
     localStorage.setItem('pedestalGrid_gridSize', '35')
     setGridSize(35)
 
-    // Store AI-extracted depth points (in deck metres + mm) for Step 3
     if (depthPoints.length > 0) {
       localStorage.setItem('aiDepthPoints', JSON.stringify(depthPoints))
     } else {
       localStorage.removeItem('aiDepthPoints')
     }
 
-    // Also clear any stale adjusted pedestals from a previous project
     localStorage.removeItem('pedestal_adjustedPedestals')
     localStorage.removeItem('pedestalHeightAdjuster_adjustedPedestals')
     localStorage.removeItem('pedestalHeightAdjuster_dismissedAiAnchors')
 
-    // Force PedestalGrid to remount by bumping the revision counter
     setProjectRevision((prev) => prev + 1)
     setStep(1)
   }, [])

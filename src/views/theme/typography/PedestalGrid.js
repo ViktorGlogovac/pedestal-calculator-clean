@@ -104,6 +104,23 @@ const PedestalGrid = ({
   // Brief highlight after creating a new shape
   const [highlightNewShape, setHighlightNewShape] = useState(false)
 
+  // Reference image overlay
+  const [overlayImage, setOverlayImage] = useState(null)
+  const [overlayOpacity, setOverlayOpacity] = useState(0.35)
+  const overlayInputRef = useRef(null)
+
+  // Cursor screen position for coordinate HUD
+  const [cursorScreenPos, setCursorScreenPos] = useState(null)
+
+  const handleOverlayUpload = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => setOverlayImage(ev.target.result)
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
   // Canvas ref and dynamic sizing
   const canvasRef = useRef(null)
   const canvasContainerRef = useRef(null)
@@ -689,6 +706,11 @@ const PedestalGrid = ({
         ref={canvasContainerRef}
         className="pc-panel"
         onMouseDown={() => setContextMenu(null)}
+        onMouseMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect()
+          setCursorScreenPos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+        }}
+        onMouseLeave={() => setCursorScreenPos(null)}
         style={{
           position: 'relative',
           flex: '1 1 0',
@@ -697,6 +719,40 @@ const PedestalGrid = ({
           background: 'var(--pc-canvas-bg)',
         }}
       >
+        {/* Hidden file input for image overlay */}
+        <input
+          ref={overlayInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleOverlayUpload}
+        />
+
+        {/* Reference image overlay — sits above canvas, passes pointer events through */}
+        {overlayImage && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 2,
+              pointerEvents: 'none',
+              overflow: 'hidden',
+            }}
+          >
+            <img
+              src={overlayImage}
+              alt="reference overlay"
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'contain',
+                opacity: overlayOpacity,
+                display: 'block',
+              }}
+            />
+          </div>
+        )}
+
         <CanvasArea
           {...{
             shapes,
@@ -811,6 +867,94 @@ const PedestalGrid = ({
             onDelete={handleLinePopupDelete}
           />
         )}
+        {/* Coordinate tooltip — follows cursor */}
+        {cursorScreenPos && cursorPosition && (
+          <div
+            style={{
+              position: 'absolute',
+              left: cursorScreenPos.x + 16,
+              top: cursorScreenPos.y - 32,
+              zIndex: 15,
+              pointerEvents: 'none',
+              background: 'rgba(15,23,42,0.82)',
+              color: '#fff',
+              borderRadius: 6,
+              padding: '4px 9px',
+              fontSize: 11,
+              fontFamily: 'monospace',
+              whiteSpace: 'nowrap',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+              letterSpacing: '0.2px',
+            }}
+          >
+            {unitSystem === 'imperial'
+              ? `${((cursorPosition.x / gridSize) * 3.28084).toFixed(2)} ft, ${((cursorPosition.y / gridSize) * 3.28084).toFixed(2)} ft`
+              : `${(cursorPosition.x / gridSize).toFixed(2)} m, ${(cursorPosition.y / gridSize).toFixed(2)} m`}
+          </div>
+        )}
+
+        {/* Map-style zoom controls — bottom right */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 16,
+            right: 16,
+            zIndex: 10,
+            display: 'flex',
+            flexDirection: 'column',
+            borderRadius: 8,
+            overflow: 'hidden',
+            border: '1px solid var(--pc-line)',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={handleZoomIn}
+            title="Zoom in"
+            style={{
+              width: 34, height: 34,
+              background: 'var(--pc-surface)',
+              border: 'none',
+              borderBottom: '1px solid var(--pc-line)',
+              cursor: 'pointer',
+              fontSize: 20, fontWeight: 400,
+              color: 'var(--pc-ink)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              lineHeight: 1,
+            }}
+          >+</button>
+          <div
+            style={{
+              width: 34, height: 28,
+              background: 'var(--pc-surface-2)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 9, fontWeight: 700,
+              color: 'var(--pc-ink-3)',
+              fontFamily: 'monospace',
+              letterSpacing: '0.3px',
+              borderBottom: '1px solid var(--pc-line)',
+              userSelect: 'none',
+            }}
+          >
+            {Math.round(zoom * 100)}%
+          </div>
+          <button
+            type="button"
+            onClick={handleZoomOut}
+            title="Zoom out"
+            style={{
+              width: 34, height: 34,
+              background: 'var(--pc-surface)',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: 24, fontWeight: 300,
+              color: 'var(--pc-ink)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              lineHeight: 1,
+            }}
+          >−</button>
+        </div>
       </div>
 
       {/* Right-hand side panel */}
@@ -834,7 +978,11 @@ const PedestalGrid = ({
         canUndo={historyIndex > 0 || shapes[activeShapeIndex]?.points.length > 0}
         canRedo={pointHistoryIndex > 0}
         onShowInstructions={onShowInstructions}
-        // toggleActiveShapeType={toggleActiveShapeType} // Uncomment to use
+        overlayImage={overlayImage}
+        overlayOpacity={overlayOpacity}
+        onOverlayUpload={() => overlayInputRef.current?.click()}
+        onOverlayOpacityChange={setOverlayOpacity}
+        onOverlayClear={() => setOverlayImage(null)}
       />
     </div>
   )
