@@ -791,9 +791,14 @@ const PedestalHeightAdjuster = ({
     }
     // Convert back to cm if in imperial
     const newHeight = unitSystem === 'imperial' ? numericVal * 2.54 : numericVal
-    // Update the edited pedestal
+    // Update the edited pedestal. Mark as a manual edit so the AI reseed effect
+    // doesn't rebuild adjustedPedestals from localStorage and overwrite this value.
     const updatedPedestals = [...pedestals]
-    const updatedPed = { ...updatedPedestals[editingPedestalIndex], height: newHeight }
+    const updatedPed = {
+      ...updatedPedestals[editingPedestalIndex],
+      height: newHeight,
+      source: 'manual',
+    }
     updatedPedestals[editingPedestalIndex] = updatedPed
 
     // --- NEW LOGIC: update points if this pedestal matches a corner ---
@@ -1067,7 +1072,7 @@ const PedestalHeightAdjuster = ({
     selectedPedestals.forEach((p) => {
       const idx = newAdjusted.findIndex((ap) => ap.x === p.x && ap.y === p.y)
       const newHeight = unitSystem === 'imperial' ? numericVal * 2.54 : numericVal
-      const updatedPed = { ...p, height: newHeight }
+      const updatedPed = { ...p, height: newHeight, source: 'manual' }
       if (idx !== -1) {
         newAdjusted[idx] = updatedPed
       } else {

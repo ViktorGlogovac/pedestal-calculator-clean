@@ -12,7 +12,12 @@
       "Bash(node *)",
       "Bash(ps *)",
       "Bash(kill 468 467)",
-      "Bash(npx --yes acorn --ecma2020 --module src/views/components/PedestalCalculator/geometryUtils.js)"
+      "Bash(npx --yes acorn --ecma2020 --module src/views/components/PedestalCalculator/geometryUtils.js)",
+      "Bash(git -C /Users/viktorglogovac/pedestal-calculator-clean remote -v)",
+      "Bash(firebase --version)",
+      "Bash(firebase projects:list)",
+      "Bash(firebase login:list)",
+      "Bash(firebase deploy *)"
     ]
   }
 }

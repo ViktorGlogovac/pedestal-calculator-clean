@@ -29,14 +29,6 @@ function toCanvasShapes(deckPlan, gridSize = 35) {
   const unit = deckPlan.unit || 'meters'
   const shapes = []
 
-  // Convert real-world point to canvas pixels
-  function toPx(pt) {
-    return {
-      x: Math.round((toCm(pt.x, unit) / 100) * gridSize),
-      y: Math.round((toCm(pt.y, unit) / 100) * gridSize),
-    }
-  }
-
   // Determine global offset (normalise to top-left origin with margin)
   const allPts = [...deckPlan.outerBoundary, ...(deckPlan.cutouts || []).flat()]
   if (allPts.length === 0) return []
@@ -48,8 +40,8 @@ function toCanvasShapes(deckPlan, gridSize = 35) {
 
   function convertPoints(pts) {
     return pts.map((pt) => ({
-      x: marginPx + Math.round(((toCm(pt.x, unit) - minXcm) / 100) * gridSize),
-      y: marginPx + Math.round(((toCm(pt.y, unit) - minYcm) / 100) * gridSize),
+      x: +(marginPx + ((toCm(pt.x, unit) - minXcm) / 100) * gridSize).toFixed(4),
+      y: +(marginPx + ((toCm(pt.y, unit) - minYcm) / 100) * gridSize).toFixed(4),
     }))
   }
 
@@ -109,8 +101,8 @@ function toCanvasDepthPoints(deckPlan, gridSize = 35) {
     return {
       ...dp,
       canvasPosition: {
-        x: marginPx + Math.round(((xCm - minXcm) / 100) * gridSize),
-        y: marginPx + Math.round(((yCm - minYcm) / 100) * gridSize),
+        x: +(marginPx + ((xCm - minXcm) / 100) * gridSize).toFixed(4),
+        y: +(marginPx + ((yCm - minYcm) / 100) * gridSize).toFixed(4),
       },
     }
   })
