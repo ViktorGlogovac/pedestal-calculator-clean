@@ -1,12 +1,57 @@
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
-const { spawn } = require('child_process')
+const { spawn, spawnSync } = require('child_process')
 
 const DEFAULT_TIMEOUT_MS = 90000
+let didAttemptLogin = false
+
+function resolveOpenAiApiKey() {
+  return process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY || ''
+}
+
+function needsApiKeyLogin(authPath) {
+  if (!fs.existsSync(authPath)) return true
+
+  try {
+    const auth = JSON.parse(fs.readFileSync(authPath, 'utf8'))
+    return auth.auth_mode !== 'apikey' && auth.auth_mode !== 'api_key'
+  } catch (_) {
+    return true
+  }
+}
+
+function ensureCodexAuth() {
+  if (didAttemptLogin) return
+  didAttemptLogin = true
+
+  const apiKey = resolveOpenAiApiKey()
+  if (!apiKey) return
+
+  const codexBin = process.env.CODEX_CLI_PATH || 'codex'
+  const authPath = path.join(os.homedir(), '.codex', 'auth.json')
+  if (!needsApiKeyLogin(authPath)) return
+
+  const login = spawnSync(codexBin, ['login', '--with-api-key'], {
+    env: {
+      ...process.env,
+      OPENAI_API_KEY: apiKey,
+      NO_COLOR: '1',
+    },
+    encoding: 'utf8',
+    input: `${apiKey}\n`,
+  })
+
+  if (login.status !== 0) {
+    const detail = String(login.stderr || login.stdout || '').trim()
+    console.warn('[codexCli] codex login failed; continuing without cached auth', detail.slice(-500))
+  }
+}
 
 function callCodexCli({ prompt, imagePath = null, outputSchema = null, timeoutMs = DEFAULT_TIMEOUT_MS }) {
   return new Promise((resolve, reject) => {
+    ensureCodexAuth()
+
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sketch-codex-'))
     const outputPath = path.join(tmpDir, 'last-message.txt')
     const schemaPath = outputSchema ? path.join(tmpDir, 'schema.json') : null
@@ -35,6 +80,7 @@ function callCodexCli({ prompt, imagePath = null, outputSchema = null, timeoutMs
       cwd: process.cwd(),
       env: {
         ...process.env,
+        OPENAI_API_KEY: resolveOpenAiApiKey(),
         // Avoid terminal control sequences and interactive prompts in server logs.
         NO_COLOR: '1',
       },
@@ -72,8 +118,16 @@ function callCodexCli({ prompt, imagePath = null, outputSchema = null, timeoutMs
         }
 
         if (code !== 0) {
-          const detail = String(stderr || stdout || `exit code ${code}`).trim()
-          reject(new Error(`Codex CLI failed: ${detail.slice(0, 800)}`))
+          // Codex echoes the prompt + session header into stderr before the real
+          // error, so an 800-char slice from the start swallows it. Log the full
+          // stderr/stdout to the server console (Cloud Run logs) for debugging,
+          // and surface the LAST 1500 chars in the rejection — that window
+          // captures the actual failure reason.
+          const fullStderr = String(stderr || '').trim()
+          const fullStdout = String(stdout || '').trim()
+          console.error('[codexCli] non-zero exit', { code, stderr: fullStderr, stdout: fullStdout })
+          const detail = (fullStderr || fullStdout || `exit code ${code}`).trim()
+          reject(new Error(`Codex CLI failed: ${detail.slice(-1500)}`))
           return
         }
 

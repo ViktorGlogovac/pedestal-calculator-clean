@@ -1,9 +1,16 @@
 /**
  * Frontend API client for the sketch analysis pipeline.
- * Communicates with the Express backend at /api/sketch (proxied via Vite).
+ * Uses the local dev proxy on localhost and calls Cloud Run directly in
+ * production to avoid Firebase Hosting rewrite timeouts on long analyses.
  */
 
-const BACKEND_BASE = '/api/sketch'
+const PROD_BACKEND_ORIGIN = 'https://pedestal-sketch-api-ssu6dk7xoq-uc.a.run.app'
+const isLocalhost =
+  typeof window !== 'undefined' &&
+  ['localhost', '127.0.0.1'].includes(window.location.hostname)
+const BACKEND_ORIGIN = isLocalhost ? '' : PROD_BACKEND_ORIGIN
+const BACKEND_BASE = `${BACKEND_ORIGIN}/api/sketch`
+const HEALTH_URL = `${BACKEND_ORIGIN}/api/health`
 
 /**
  * Send an image file to the backend for full pipeline analysis.
@@ -150,7 +157,7 @@ async function getDebugData(sessionId) {
  */
 async function checkServerHealth() {
   try {
-    const response = await fetch('/api/health', { method: 'GET' })
+    const response = await fetch(HEALTH_URL, { method: 'GET' })
     if (!response.ok) return { ok: false, openaiConfigured: false }
     const data = await response.json()
     return { ok: true, openaiConfigured: data.openaiConfigured || false }

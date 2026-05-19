@@ -1,0 +1,39 @@
+# Anything in this file is excluded from `gcloud builds submit` uploads.
+# The Dockerfile only needs package.json, package-lock.json, and server/.
+
+.gcloudignore
+.git
+.gitignore
+.firebase
+.claude
+.vscode
+.idea
+.DS_Store
+
+# Frontend — built and served by Firebase Hosting, not this image.
+src
+public
+build
+index.html
+vite.config.*
+postcss.config.*
+.eslintrc*
+.prettierrc*
+
+# Node modules — installed inside the container by `npm ci`.
+node_modules
+**/node_modules
+
+# Local dev artifacts — would balloon the upload (server/uploads is ~869MB).
+server/uploads
+**/*.log
+.env
+.env.*
+!.env.example
+
+# Test fixtures
+server/tests/fixtures
+
+# Misc
+*.tmp
+*.tgz

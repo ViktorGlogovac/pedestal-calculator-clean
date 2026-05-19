@@ -17,7 +17,21 @@
       "Bash(firebase --version)",
       "Bash(firebase projects:list)",
       "Bash(firebase login:list)",
-      "Bash(firebase deploy *)"
+      "Bash(firebase deploy *)",
+      "Bash(command -v gcloud)",
+      "Bash(gcloud --version)",
+      "Bash(command -v firebase)",
+      "Bash(command -v docker)",
+      "Bash(docker --version)",
+      "Bash(gcloud auth *)",
+      "Bash(gcloud config *)",
+      "Bash(gcloud services enable *)",
+      "Bash(gcloud secrets versions list *)",
+      "Read(//private/tmp/**)",
+      "Read(//Users/viktorglogovac/**)",
+      "Bash(gcloud builds *)",
+      "Bash(kill 8572 8570)",
+      "Bash(gcloud run *)"
     ]
   }
 }

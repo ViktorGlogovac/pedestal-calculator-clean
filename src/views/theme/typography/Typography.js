@@ -353,7 +353,25 @@ const PedestalCalculatorMain = () => {
     localStorage.setItem('pedestalGrid_shapes', JSON.stringify(shapes))
     localStorage.setItem('pedestalGrid_activeShapeIndex', '0')
     localStorage.setItem('pedestalGrid_gridSize', '35')
+
+    setPoints(
+      shapes.map((shape) => ({
+        ...shape,
+        points: (shape.points || []).map((pt) => ({
+          ...pt,
+          x: (pt.x / 35) * 100,
+          y: (pt.y / 35) * 100,
+        })),
+      }))
+    )
     setGridSize(35)
+    setCalcData({
+      tiles: [],
+      pedestals: [],
+      userPolygon: [],
+      tileCount: 0,
+      adjustedPedestals: {},
+    })
 
     if (depthPoints.length > 0) {
       localStorage.setItem('aiDepthPoints', JSON.stringify(depthPoints))
