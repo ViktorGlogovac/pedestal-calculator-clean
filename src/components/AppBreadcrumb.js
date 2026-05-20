@@ -1,14 +1,16 @@
 import React from 'react'
 import { Link, useLocation } from 'react-router-dom'
 
+import { useLanguage } from '../context/LanguageContext'
 import routes from '../routes'
 
 const AppBreadcrumb = () => {
   const currentLocation = useLocation().pathname
+  const { t } = useLanguage()
 
   const getRouteName = (pathname, routeList) => {
     const currentRoute = routeList.find((route) => route.path === pathname)
-    return currentRoute ? currentRoute.name : false
+    return currentRoute ? t(currentRoute.nameKey) : false
   }
 
   const getBreadcrumbs = (location) => {
@@ -32,7 +34,7 @@ const AppBreadcrumb = () => {
   return (
     <nav aria-label="breadcrumb" style={{ padding: '6px 0', fontSize: 12, color: 'var(--pc-ink-3, #666)' }}>
       <Link to="/" style={{ color: 'var(--pc-ink-3, #666)', textDecoration: 'none' }}>
-        Home
+        {t('nav.home')}
       </Link>
       {breadcrumbs.map((breadcrumb, index) => (
         <span key={index}>

@@ -1,4 +1,5 @@
 import React from 'react'
+import { useLanguage } from '../../../context/LanguageContext'
 
 function HeightPopup({
   top,
@@ -10,6 +11,7 @@ function HeightPopup({
   onDelete,
   onCancel,
 }) {
+  const { t } = useLanguage()
   return (
     <div
       style={{
@@ -35,7 +37,7 @@ function HeightPopup({
           marginBottom: '20px',
         }}
       >
-        <span style={{ fontSize: '18px', fontWeight: 'bold' }}>Set Point Height</span>
+        <span style={{ fontSize: '18px', fontWeight: 'bold' }}>{t('calculator.setPointHeight')}</span>
         <button
           onClick={onCancel}
           style={{
@@ -56,7 +58,7 @@ function HeightPopup({
           alignItems: 'center',
         }}
       >
-        <label style={{ flex: 1, fontSize: '16px', color: '#333' }}>Height:</label>
+        <label style={{ flex: 1, fontSize: '16px', color: '#333' }}>{t('calculator.height')}:</label>
         <input
           type="text"
           value={tempHeight}
@@ -87,7 +89,7 @@ function HeightPopup({
             fontSize: '16px',
           }}
         >
-          Confirm
+          {t('calculator.confirm')}
         </button>
         <button
           onClick={onDelete}
@@ -101,7 +103,7 @@ function HeightPopup({
             fontSize: '16px',
           }}
         >
-          Delete
+          {t('common.delete')}
         </button>
         <button
           onClick={onCancel}
@@ -115,7 +117,7 @@ function HeightPopup({
             fontSize: '16px',
           }}
         >
-          Cancel
+          {t('common.cancel')}
         </button>
       </div>
     </div>

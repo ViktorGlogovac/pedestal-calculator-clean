@@ -46,12 +46,16 @@ const TileCanvas = ({
   onSelectionMove,
   onSelectionEnd,
   showRedPedestals = true,
+  showPedestalShadows = true,
+  pedestalColorResolver,
+  pedestalTooltipFormatter,
   width = CANVAS_WIDTH,
   height = CANVAS_HEIGHT,
 }) => {
   const canvasRef = useRef(null)
   const isPanningRef = useRef(false)
   const panStartRef = useRef({ x: 0, y: 0 })
+  const [hoverTooltip, setHoverTooltip] = useState(null)
 
   const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current
@@ -210,7 +214,7 @@ const TileCanvas = ({
     const heightRange = maxHeight - minHeight
     const hasHeightValues = Number.isFinite(maxHeight) && maxHeight > 0
     const useFastDots = visiblePedestals.length > 5000 || zoom < 0.08
-    const drawShadows = hasHeightValues && !useFastDots && visiblePedestals.length <= 2000
+    const drawShadows = showPedestalShadows && hasHeightValues && !useFastDots && visiblePedestals.length <= 2000
 
     if (drawShadows) {
       visiblePedestals.forEach((p) => {
@@ -227,38 +231,57 @@ const TileCanvas = ({
 
     if (useFastDots) {
       const dotSize = Math.min(80, Math.max(4, 2 / Math.max(zoom, 0.02)))
-      ctx.fillStyle = '#dc2626'
-      visiblePedestals.forEach((p) => {
-        if (p.isUserSet) return
-        ctx.fillRect(cmToPx(p.x) - dotSize / 2, cmToPx(p.y) - dotSize / 2, dotSize, dotSize)
-      })
-      ctx.fillStyle = '#16a34a'
-      visiblePedestals.forEach((p) => {
-        if (!p.isUserSet) return
-        ctx.fillRect(cmToPx(p.x) - dotSize / 2, cmToPx(p.y) - dotSize / 2, dotSize, dotSize)
-      })
+      if (pedestalColorResolver) {
+        visiblePedestals.forEach((p) => {
+          ctx.fillStyle = pedestalColorResolver(p) || (p.isUserSet ? '#16a34a' : '#dc2626')
+          ctx.fillRect(cmToPx(p.x) - dotSize / 2, cmToPx(p.y) - dotSize / 2, dotSize, dotSize)
+        })
+      } else {
+        ctx.fillStyle = '#dc2626'
+        visiblePedestals.forEach((p) => {
+          if (p.isUserSet) return
+          ctx.fillRect(cmToPx(p.x) - dotSize / 2, cmToPx(p.y) - dotSize / 2, dotSize, dotSize)
+        })
+        ctx.fillStyle = '#16a34a'
+        visiblePedestals.forEach((p) => {
+          if (!p.isUserSet) return
+          ctx.fillRect(cmToPx(p.x) - dotSize / 2, cmToPx(p.y) - dotSize / 2, dotSize, dotSize)
+        })
+      }
     } else {
-      ctx.beginPath()
-      visiblePedestals.forEach((p) => {
-        if (p.isUserSet) return
-        const cx = cmToPx(p.x)
-        const cy = cmToPx(p.y)
-        ctx.moveTo(cx + 4, cy)
-        ctx.arc(cx, cy, 4, 0, 2 * Math.PI)
-      })
-      ctx.fillStyle = '#dc2626'
-      ctx.fill()
+      if (pedestalColorResolver) {
+        visiblePedestals.forEach((p) => {
+          const cx = cmToPx(p.x)
+          const cy = cmToPx(p.y)
+          ctx.beginPath()
+          ctx.moveTo(cx + 4, cy)
+          ctx.arc(cx, cy, 4, 0, 2 * Math.PI)
+          ctx.fillStyle = pedestalColorResolver(p) || (p.isUserSet ? '#16a34a' : '#dc2626')
+          ctx.fill()
+        })
+      } else {
+        ctx.beginPath()
+        visiblePedestals.forEach((p) => {
+          if (p.isUserSet) return
+          const cx = cmToPx(p.x)
+          const cy = cmToPx(p.y)
+          ctx.moveTo(cx + 4, cy)
+          ctx.arc(cx, cy, 4, 0, 2 * Math.PI)
+        })
+        ctx.fillStyle = '#dc2626'
+        ctx.fill()
 
-      ctx.beginPath()
-      visiblePedestals.forEach((p) => {
-        if (!p.isUserSet) return
-        const cx = cmToPx(p.x)
-        const cy = cmToPx(p.y)
-        ctx.moveTo(cx + 4, cy)
-        ctx.arc(cx, cy, 4, 0, 2 * Math.PI)
-      })
-      ctx.fillStyle = '#16a34a'
-      ctx.fill()
+        ctx.beginPath()
+        visiblePedestals.forEach((p) => {
+          if (!p.isUserSet) return
+          const cx = cmToPx(p.x)
+          const cy = cmToPx(p.y)
+          ctx.moveTo(cx + 4, cy)
+          ctx.arc(cx, cy, 4, 0, 2 * Math.PI)
+        })
+        ctx.fillStyle = '#16a34a'
+        ctx.fill()
+      }
     }
 
     // Draw AI/manual anchor overlays so imported AI depth locations remain
@@ -364,6 +387,27 @@ const TileCanvas = ({
     }
 
     ctx.restore()
+
+    if (hoverTooltip) {
+      const paddingX = 10
+      const tooltipHeight = 26
+      ctx.save()
+      ctx.font = '600 12px sans-serif'
+      const textWidth = ctx.measureText(hoverTooltip.text).width
+      const tooltipWidth = Math.max(72, textWidth + paddingX * 2)
+      const x = Math.min(Math.max(hoverTooltip.x - tooltipWidth / 2, 8), canvas.width - tooltipWidth - 8)
+      const y = Math.max(8, hoverTooltip.y - tooltipHeight - 12)
+
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.92)'
+      ctx.beginPath()
+      ctx.roundRect(x, y, tooltipWidth, tooltipHeight, 6)
+      ctx.fill()
+      ctx.fillStyle = '#fff'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(hoverTooltip.text, x + tooltipWidth / 2, y + tooltipHeight / 2)
+      ctx.restore()
+    }
   }, [
     userPolygon,
     tiles,
@@ -379,6 +423,9 @@ const TileCanvas = ({
     selectionEnd,
     isSelecting,
     showRedPedestals,
+    showPedestalShadows,
+    pedestalColorResolver,
+    hoverTooltip,
   ])
 
   useEffect(() => {
@@ -423,6 +470,34 @@ const TileCanvas = ({
   }
 
   const handleMouseMove = (e) => {
+    const updateHoveredPedestal = () => {
+      if (!pedestalTooltipFormatter || !canvasRef.current) return
+      const rect = canvasRef.current.getBoundingClientRect()
+      const offsetX = e.clientX - rect.left
+      const offsetY = e.clientY - rect.top
+      const thresholdPx = 10
+      let nearest = null
+      let nearestDistance = thresholdPx
+
+      pedestals.forEach((p) => {
+        const sx = cmToPx(p.x) * zoom + panOffset.x
+        const sy = cmToPx(p.y) * zoom + panOffset.y
+        const distance = Math.hypot(sx - offsetX, sy - offsetY)
+        if (distance <= nearestDistance) {
+          nearest = p
+          nearestDistance = distance
+        }
+      })
+
+      if (!nearest) {
+        setHoverTooltip(null)
+        return
+      }
+
+      const text = pedestalTooltipFormatter(nearest)
+      setHoverTooltip(text ? { text, x: offsetX, y: offsetY } : null)
+    }
+
     if (isSelecting) {
       const rect = canvasRef.current.getBoundingClientRect()
       const offsetX = e.clientX - rect.left
@@ -435,6 +510,9 @@ const TileCanvas = ({
       const dy = e.clientY - panStartRef.current.y
       panStartRef.current = { x: e.clientX, y: e.clientY }
       setPanOffset((prev) => ({ x: prev.x + dx, y: prev.y + dy }))
+      setHoverTooltip(null)
+    } else {
+      updateHoveredPedestal()
     }
   }
 
@@ -448,6 +526,11 @@ const TileCanvas = ({
       if (onSelectionEnd) onSelectionEnd(canvasX, canvasY)
     }
     isPanningRef.current = false
+  }
+
+  const handleMouseLeave = (e) => {
+    setHoverTooltip(null)
+    handleMouseUp(e)
   }
 
   // --------------------------
@@ -478,7 +561,7 @@ const TileCanvas = ({
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
       onClick={handleCanvasClick}
     />
   )
@@ -522,4 +605,7 @@ TileCanvas.propTypes = {
   onSelectionMove: PropTypes.func,
   onSelectionEnd: PropTypes.func,
   showRedPedestals: PropTypes.bool,
+  showPedestalShadows: PropTypes.bool,
+  pedestalColorResolver: PropTypes.func,
+  pedestalTooltipFormatter: PropTypes.func,
 }

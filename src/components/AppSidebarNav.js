@@ -1,8 +1,11 @@
 import React from 'react'
 import { NavLink } from 'react-router-dom'
 import PropTypes from 'prop-types'
+import { useLanguage } from '../context/LanguageContext'
 
 export const AppSidebarNav = ({ items }) => {
+  const { t } = useLanguage()
+
   return (
     <nav
       style={{
@@ -32,7 +35,7 @@ export const AppSidebarNav = ({ items }) => {
             })}
           >
             <span style={{ fontSize: 16, lineHeight: 1, flexShrink: 0 }}>{item.icon}</span>
-            <span>{item.name}</span>
+            <span>{t(item.nameKey)}</span>
           </NavLink>
         ))}
     </nav>

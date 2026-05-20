@@ -1,5 +1,6 @@
 import React from 'react'
 import PropTypes from 'prop-types'
+import { useLanguage } from '../../../context/LanguageContext'
 
 // ─── Tile deck geometry ───────────────────────────────────────────────────────
 const COLS = 6
@@ -100,36 +101,38 @@ const AuthTileDeck = () => (
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
 const AuthShell = ({ children }) => {
+  const { t } = useLanguage()
+
   return (
     <div className="pc-root pc-auth">
       <section className="pc-auth-hero">
         <div className="pc-auth-logo">
           <span className="pc-auth-logo-mark">P</span>
-          <span>Pedestal Calc</span>
+          <span>{t('calculator.brand')}</span>
         </div>
 
         <div>
           <div style={{ fontSize: 12, color: 'rgba(245,244,239,0.56)', marginBottom: 12 }}>
-            Deck takeoffs, pedestal schedules, and quote-ready layouts.
+            {t('auth.shellSubtitle')}
           </div>
           <div className="pc-auth-deck" aria-hidden="true">
             <AuthTileDeck />
           </div>
           <blockquote className="pc-auth-testimonial">
-            Built for fast rooftop layout review without losing the project history.
-            <span className="author">ENMON project workspace</span>
+            {t('auth.shellQuote')}
+            <span className="author">{t('auth.shellWorkspace')}</span>
           </blockquote>
         </div>
 
         <div className="pc-auth-trust">
           <span className="pc-auth-trust-item">
-            <span className="dot" /> Saved projects
+            <span className="dot" /> {t('auth.savedProjects')}
           </span>
           <span className="pc-auth-trust-item">
-            <span className="dot" /> AI plan import
+            <span className="dot" /> {t('auth.aiPlanImport')}
           </span>
           <span className="pc-auth-trust-item">
-            <span className="dot" /> PDF quotes
+            <span className="dot" /> {t('auth.pdfQuotes')}
           </span>
         </div>
       </section>

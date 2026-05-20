@@ -183,6 +183,7 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
       alignment="center"
       scrollable
     >
+      <style>{exampleGuideStyles}</style>
       <ModalHeader closeButton onClose={handleClose}>
         <div style={{ minWidth: 0 }}>
           <div className="pc-rail-label" style={{ marginBottom: 2 }}>
@@ -198,6 +199,8 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
         <div className="pc-ai-shell">
           <div className="pc-ai-main">
             <div style={{ display: 'grid', gap: 14 }}>
+              <ExampleSketchGuide />
+
               <UnitSelector
                 value={sketchUnitSystem}
                 onChange={setSketchUnitSystem}
@@ -516,6 +519,151 @@ const UnitSelector = ({ value, onChange, disabled }) => (
     </div>
   </section>
 )
+
+const ExampleSketchGuide = () => (
+  <section
+    className="pc-ai-example-guide"
+    style={{
+      padding: 14,
+      borderRadius: 14,
+      border: '1px solid var(--pc-line)',
+      background: 'linear-gradient(135deg, #fff 0%, oklch(98% 0.02 240) 100%)',
+      overflow: 'hidden',
+    }}
+  >
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+      <div>
+        <div className="pc-rail-label" style={{ marginBottom: 4 }}>
+          Example sketch format
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--pc-ink-3)', lineHeight: 1.45 }}>
+          Draw a clean outside outline, then write dimensions beside the matching edges.
+        </div>
+      </div>
+      <span
+        className="pc-ai-example-pill"
+        style={{
+          alignSelf: 'flex-start',
+          padding: '4px 8px',
+          borderRadius: 999,
+          background: 'var(--pc-accent-soft)',
+          color: 'var(--pc-accent-ink)',
+          fontSize: 11,
+          fontWeight: 700,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        Animated guide
+      </span>
+    </div>
+
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+        gap: 12,
+      }}
+    >
+      <ExampleSketchCard
+        title="Deck plan image"
+        subtitle="Use feet/meters for edge lengths."
+        variant="plan"
+      />
+      <ExampleSketchCard
+        title="Depth image, optional"
+        subtitle="Use inch/mm spot heights if you have them."
+        variant="depth"
+      />
+    </div>
+  </section>
+)
+
+const ExampleSketchCard = ({ title, subtitle, variant }) => {
+  const isDepth = variant === 'depth'
+  const path = isDepth
+    ? 'M38 18 H210 V70 H138 V190 H215 V242 H38 Z'
+    : 'M30 18 H218 V78 H148 V190 H225 V242 H30 Z'
+  const labels = isDepth
+    ? [
+        ['4"', 45, 38],
+        ['2"', 196, 37],
+        ['2"', 198, 75],
+        ['4"', 126, 82],
+        ['6 3/4"', 84, 104],
+        ['7"', 90, 194],
+        ['3"', 133, 195],
+        ['2"', 205, 205],
+        ['4"', 45, 235],
+        ['3"', 204, 235],
+      ]
+    : [
+        ["32'", 116, 16],
+        ["10'", 226, 54],
+        ["12'", 176, 84],
+        ["24'", 156, 144],
+        ["12'", 180, 198],
+        ["10'", 228, 224],
+        ["44'", 18, 144],
+        ["32'", 118, 252],
+      ]
+
+  return (
+    <div
+      style={{
+        border: '1px solid var(--pc-line)',
+        borderRadius: 12,
+        background: '#fff',
+        overflow: 'hidden',
+        boxShadow: '0 10px 24px rgba(15, 23, 42, 0.06)',
+      }}
+    >
+      <div style={{ padding: '10px 12px 8px' }}>
+        <div style={{ fontSize: 13, fontWeight: 750, color: 'var(--pc-ink)' }}>{title}</div>
+        <div style={{ fontSize: 11, color: 'var(--pc-ink-3)', marginTop: 2 }}>{subtitle}</div>
+      </div>
+      <svg
+        viewBox="0 0 256 270"
+        role="img"
+        aria-label={title}
+        style={{ display: 'block', width: '100%', height: 210, background: '#fbfdff' }}
+      >
+        {Array.from({ length: 12 }).map((_, index) => (
+          <line
+            key={index}
+            x1="0"
+            x2="256"
+            y1={22 + index * 20}
+            y2={22 + index * 20}
+            stroke="#b9cff5"
+            strokeWidth="0.7"
+          />
+        ))}
+        <path
+          className="pc-ai-example-outline"
+          d={path}
+          fill="rgba(37, 99, 235, 0.04)"
+          stroke="#292929"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {labels.map(([label, x, y], index) => (
+          <text
+            key={`${label}-${x}-${y}`}
+            className="pc-ai-example-label"
+            x={x}
+            y={y}
+            style={{ animationDelay: `${0.45 + index * 0.09}s` }}
+            textAnchor="middle"
+          >
+            {label}
+          </text>
+        ))}
+        <circle className="pc-ai-example-pen" r="4" fill="var(--pc-accent)" />
+      </svg>
+    </div>
+  )
+}
 
 const StageProgress = ({ stages, currentStage, completedStages }) => (
   <section
@@ -978,6 +1126,56 @@ const spinnerStyle = {
   borderTopColor: '#fff',
 }
 
+const exampleGuideStyles = `
+  .pc-ai-example-outline {
+    stroke-dasharray: 740;
+    stroke-dashoffset: 740;
+    animation: pc-ai-draw-outline 2.4s ease-in-out infinite;
+  }
+
+  .pc-ai-example-label {
+    font-family: "Comic Sans MS", "Bradley Hand", cursive;
+    font-size: 16px;
+    font-weight: 700;
+    fill: #303030;
+    opacity: 0;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: pc-ai-write-label 2.4s ease-in-out infinite;
+  }
+
+  .pc-ai-example-pen {
+    offset-path: path("M30 18 H218 V78 H148 V190 H225 V242 H30 Z");
+    animation: pc-ai-pen-path 2.4s ease-in-out infinite;
+    opacity: 0;
+  }
+
+  .pc-ai-example-guide:hover .pc-ai-example-outline,
+  .pc-ai-example-guide:hover .pc-ai-example-label,
+  .pc-ai-example-guide:hover .pc-ai-example-pen {
+    animation-duration: 1.6s;
+  }
+
+  @keyframes pc-ai-draw-outline {
+    0% { stroke-dashoffset: 740; }
+    45%, 82% { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: 740; }
+  }
+
+  @keyframes pc-ai-write-label {
+    0%, 28% { opacity: 0; transform: translateY(4px) rotate(-2deg) scale(0.96); }
+    42%, 82% { opacity: 1; transform: translateY(0) rotate(-2deg) scale(1); }
+    100% { opacity: 0; transform: translateY(-2px) rotate(-2deg) scale(0.98); }
+  }
+
+  @keyframes pc-ai-pen-path {
+    0% { offset-distance: 0%; opacity: 0; }
+    10% { opacity: 1; }
+    45% { offset-distance: 100%; opacity: 1; }
+    54%, 100% { offset-distance: 100%; opacity: 0; }
+  }
+`
+
 DropZone.propTypes = {
   label: PropTypes.string.isRequired,
   required: PropTypes.bool,
@@ -1003,6 +1201,12 @@ UnitSelector.propTypes = {
   value: PropTypes.oneOf(['metric', 'imperial']).isRequired,
   onChange: PropTypes.func.isRequired,
   disabled: PropTypes.bool,
+}
+
+ExampleSketchCard.propTypes = {
+  title: PropTypes.string.isRequired,
+  subtitle: PropTypes.string.isRequired,
+  variant: PropTypes.oneOf(['plan', 'depth']).isRequired,
 }
 
 StageProgress.propTypes = {

@@ -1,11 +1,11 @@
 const _nav = [
   {
-    name: 'Pedestal Calculator',
+    nameKey: 'nav.pedestalCalculator',
     to: '/pedestal-calculator',
     icon: '⊞',
   },
   {
-    name: 'My Projects',
+    nameKey: 'nav.myProjects',
     to: '/my-projects',
     icon: '📁',
   },

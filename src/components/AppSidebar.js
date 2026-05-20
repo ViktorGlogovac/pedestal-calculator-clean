@@ -2,6 +2,7 @@ import React from 'react'
 import { useSelector, useDispatch } from 'react-redux'
 
 import { AppSidebarNav } from './AppSidebarNav'
+import { useLanguage } from '../context/LanguageContext'
 import enmonLogo from 'src/assets/brand/enmon-logo.svg'
 import navigation from '../_nav'
 
@@ -10,6 +11,7 @@ const SIDEBAR_WIDTH = 256
 const AppSidebar = () => {
   const dispatch = useDispatch()
   const sidebarShow = useSelector((state) => state.sidebarShow)
+  const { t } = useLanguage()
 
   return (
     <div
@@ -66,7 +68,7 @@ const AppSidebar = () => {
             fontWeight: 500,
           }}
         >
-          ← Collapse
+          ← {t('header.collapse')}
         </button>
       </div>
     </div>

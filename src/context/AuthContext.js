@@ -2,11 +2,13 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient'
 
 const AuthContext = createContext(null)
+const GUEST_STORAGE_KEY = 'pc-guest-session'
 
 export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null)
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [isGuest, setIsGuest] = useState(() => localStorage.getItem(GUEST_STORAGE_KEY) === 'true')
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) {
@@ -46,13 +48,19 @@ export const AuthProvider = ({ children }) => {
     () => ({
       session,
       user,
+      isGuest,
       loading,
       isConfigured: isSupabaseConfigured,
       async signIn(email, password) {
         if (!supabase) {
           return { error: new Error('Supabase environment variables are missing.') }
         }
-        return supabase.auth.signInWithPassword({ email, password })
+        const result = await supabase.auth.signInWithPassword({ email, password })
+        if (!result.error) {
+          localStorage.removeItem(GUEST_STORAGE_KEY)
+          setIsGuest(false)
+        }
+        return result
       },
       async signUp(email, password) {
         if (!supabase) {
@@ -60,12 +68,18 @@ export const AuthProvider = ({ children }) => {
         }
         return supabase.auth.signUp({ email, password })
       },
+      continueAsGuest() {
+        localStorage.setItem(GUEST_STORAGE_KEY, 'true')
+        setIsGuest(true)
+      },
       async signOut() {
+        localStorage.removeItem(GUEST_STORAGE_KEY)
+        setIsGuest(false)
         if (!supabase) return { error: null }
         return supabase.auth.signOut()
       },
     }),
-    [loading, session, user],
+    [isGuest, loading, session, user],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
@@ -78,4 +92,3 @@ export const useAuth = () => {
   }
   return context
 }
-

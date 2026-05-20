@@ -1,6 +1,8 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import PropTypes from 'prop-types'
 import enmonLogo from '../../../assets/brand/enmon-logo.svg'
+import { useLanguage } from '../../../context/LanguageContext'
+import TileCanvas from '../../components/PedestalCalculator/TileCanvas'
 
 /* ---------- CONSTANTS ------------------------------------------- */
 const CANVAS_WIDTH = 900
@@ -94,18 +96,31 @@ const StatCard = ({ label, value, sub }) => (
 )
 
 /* ---------- COMPONENT ------------------------------------------- */
-const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, userEmail, metrics }) => {
+const QuoteStep = ({
+  calcData,
+  unitSystem,
+  onShowInstructions,
+  projectName,
+  userEmail,
+  metrics,
+  gridSize,
+  zoom,
+  setZoom,
+  panOffset,
+  setPanOffset,
+}) => {
+  const { t, language } = useLanguage()
   const [selectedCategory, setSelectedCategory] = useState('Pro Series')
-  const [hoveredPedestal, setHoveredPedestal] = useState(null)
-  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 })
   const [notes, setNotes] = useState('')
+  const canvasContainerRef = useRef(null)
+  const [canvasSize, setCanvasSize] = useState({ width: CANVAS_WIDTH, height: CANVAS_HEIGHT })
 
   const { grouped, idsUsed } = useMemo(() => {
     const g = {}, ids = new Set()
     calcData.pedestals?.forEach((p) => {
       const mm = convertToMm(p.height)
       const prod = pedestalOptions[selectedCategory].find((o) => mm >= o.min && mm <= o.max)
-      const id = prod ? prod.id : 'Unmatched'
+      const id = prod ? prod.id : t('calculator.unmatched')
       ids.add(id)
       g[id] = (g[id] || 0) + 1
     })
@@ -116,30 +131,40 @@ const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, user
   const userPolygons = useMemo(() => normalizeUserPolygons(calcData.userPolygon), [calcData.userPolygon])
   const polygonPoints = userPolygons.flat()
 
-  /* Screen scale */
-  const MARGIN = 20
-  let scale = 1, offsetX = 0, offsetY = 0
-  if (polygonPoints.length) {
-    const xs = polygonPoints.map((p) => p[0])
-    const ys = polygonPoints.map((p) => p[1])
-    const w = Math.max(...xs) - Math.min(...xs)
-    const h = Math.max(...ys) - Math.min(...ys)
-    scale = Math.min((CANVAS_WIDTH - MARGIN * 2) / w, (CANVAS_HEIGHT - MARGIN * 2) / h)
-    offsetX = (CANVAS_WIDTH - w * scale) / 2 - Math.min(...xs) * scale
-    offsetY = (CANVAS_HEIGHT - h * scale) / 2 - Math.min(...ys) * scale
-  }
-  const P = ([x, y]) => [x * scale + offsetX, y * scale + offsetY]
-  const polyPointStrings = userPolygons.map((polygon) => polygon.map((p) => P(p).join(',')).join(' '))
+  useEffect(() => {
+    const element = canvasContainerRef.current
+    if (!element) return undefined
+
+    const updateSize = () => {
+      const rect = element.getBoundingClientRect()
+      setCanvasSize({
+        width: Math.max(1, Math.round(rect.width)),
+        height: Math.max(1, Math.round(rect.height)),
+      })
+    }
+
+    updateSize()
+    const observer = new ResizeObserver(updateSize)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
   const totalPedestals = calcData.pedestals?.length || 0
   const totalTiles = calcData.tileCount || 0
-
-  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-  const quoteRef = `QT-${Date.now().toString(36).toUpperCase().slice(-6)}`
-
-  return (
-    <div>
-      <style>{`
+  const unitToPixel = Number.isFinite(gridSize) && gridSize > 0 ? gridSize / 100 : 0.5
+  const cmToPx = (val) => val * unitToPixel
+  const quotePedestalColor = useMemo(() => (pedestal) => {
+    const mm = convertToMm(pedestal.height)
+    const prod = pedestalOptions[selectedCategory].find((o) => mm >= o.min && mm <= o.max)
+    const id = prod ? prod.id : t('calculator.unmatched')
+    return colourMap[id] || '#64748B'
+  }, [colourMap, selectedCategory, t])
+  const quoteFontFamily =
+    language === 'zh'
+      ? '"Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC", "Heiti SC", sans-serif'
+      : '"Helvetica Neue", Arial, sans-serif'
+  const quoteStyles = `
+        ${language === 'zh' ? "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;800&display=swap');" : ''}
         .qs-print { display: none !important; }
         @media print {
           @page { margin: 0.4in; size: letter portrait; }
@@ -154,7 +179,7 @@ const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, user
             padding: 0.4in;
             box-sizing: border-box;
             margin: 0;
-            font-family: 'Helvetica Neue', Arial, sans-serif;
+            font-family: ${quoteFontFamily};
             font-size: 12px;
           }
           .qs-print-inner {
@@ -168,10 +193,17 @@ const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, user
             color-adjust: exact !important;
           }
         }
-      `}</style>
+      `
+
+  const today = new Date().toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+  const quoteRef = `QT-${Date.now().toString(36).toUpperCase().slice(-6)}`
+
+  return (
+    <div style={{ display: 'flex', flex: 1, minHeight: 0, width: '100%' }}>
+      <style>{quoteStyles}</style>
 
       {/* ===== PRINT LAYOUT ===== */}
-      <div className="qs-print" style={{ fontFamily: "'Helvetica Neue', Arial, sans-serif", color: '#0F172A' }}>
+      <div className="qs-print" style={{ fontFamily: quoteFontFamily, color: '#0F172A' }}>
       <div className="qs-print-inner">
 
         {/* Print Header */}
@@ -182,12 +214,12 @@ const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, user
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <img src={enmonLogo} alt="ENMON" style={{ height: 30, width: 'auto' }} />
             <div>
-              <div style={{ fontSize: 10, color: '#64748B', marginTop: 2 }}>pedestals & outdoor flooring</div>
+              <div style={{ fontSize: 10, color: '#64748B', marginTop: 2 }}>{t('calculator.pedestalsOutdoorFlooring')}</div>
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 20, fontWeight: 800, color: '#0F172A', letterSpacing: '-0.3px' }}>Material Quote</div>
-            <div style={{ fontSize: 10, color: '#64748B', marginTop: 3 }}>Ref: {quoteRef} &nbsp;·&nbsp; {today}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: '#0F172A', letterSpacing: '-0.3px' }}>{t('calculator.materialQuote')}</div>
+            <div style={{ fontSize: 10, color: '#64748B', marginTop: 3 }}>{t('calculator.reference')}: {quoteRef} &nbsp;·&nbsp; {today}</div>
           </div>
         </div>
 
@@ -197,10 +229,10 @@ const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, user
           border: '1px solid #E2E8F0', borderRadius: 8, overflow: 'hidden',
         }}>
           {[
-            { label: 'Project', value: projectName || 'Untitled Project' },
-            { label: 'Prepared For', value: userEmail || '—' },
-            { label: 'Category', value: selectedCategory },
-            { label: 'Date', value: today },
+            { label: t('projects.project'), value: projectName || t('projects.untitled') },
+            { label: t('calculator.preparedFor'), value: userEmail || '—' },
+            { label: t('calculator.category'), value: selectedCategory },
+            { label: t('calculator.date'), value: today },
           ].map(({ label, value }, i, arr) => (
             <div key={label} style={{
               flex: 1, padding: '8px 12px',
@@ -216,11 +248,11 @@ const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, user
         {/* Summary Stats Row */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
           {[
-            { label: 'Tiles', value: totalTiles.toLocaleString(), color: '#2563EB' },
-            { label: 'Pedestals', value: totalPedestals.toLocaleString(), color: '#16A34A' },
-            { label: 'SKUs', value: Object.keys(grouped).length, color: '#7C3AED' },
-            { label: metrics?.area ? `Area (${metrics.areaUnit})` : 'Area', value: metrics?.area || '—', color: '#0891B2' },
-            { label: 'Avg Height', value: metrics?.averageHeight ? `${metrics.averageHeight} ${metrics.heightUnit}` : '—', color: '#D97706' },
+            { label: t('calculator.tiles'), value: totalTiles.toLocaleString(), color: '#2563EB' },
+            { label: t('calculator.pedestals'), value: totalPedestals.toLocaleString(), color: '#16A34A' },
+            { label: t('calculator.skus'), value: Object.keys(grouped).length, color: '#7C3AED' },
+            { label: metrics?.area ? `${t('projects.area')} (${metrics.areaUnit})` : t('projects.area'), value: metrics?.area || '—', color: '#0891B2' },
+            { label: t('calculator.avgHeight'), value: metrics?.averageHeight ? `${metrics.averageHeight} ${metrics.heightUnit}` : '—', color: '#D97706' },
           ].map(({ label, value, color, highlight }) => (
             <div key={label} style={{
               flex: 1, padding: '8px 10px',
@@ -241,14 +273,14 @@ const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, user
           {/* Left: Layout Plan */}
           <div style={{ flexShrink: 0 }}>
             <div style={{ fontSize: 9, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
-              Layout Plan
+              {t('calculator.layoutPlan')}
             </div>
             <div style={{ border: '1px solid #CBD5E1', borderRadius: 8, overflow: 'hidden', lineHeight: 0 }}>
               <svg width={PRINT_W} height={PRINT_H} style={{ display: 'block', background: '#FAFAFA' }}>
                 <rect width={PRINT_W} height={PRINT_H} fill="#FAFAFA" />
                 {(() => {
                   if (!polygonPoints.length) return (
-                    <text x={PRINT_W / 2} y={PRINT_H / 2} textAnchor="middle" fontSize={11} fill="#94A3B8" fontFamily="Arial">No layout data</text>
+                    <text x={PRINT_W / 2} y={PRINT_H / 2} textAnchor="middle" fontSize={11} fill="#94A3B8" fontFamily="Arial">{t('calculator.noLayoutData')}</text>
                   )
                   const xs = polygonPoints.map((p) => p[0])
                   const ys = polygonPoints.map((p) => p[1])
@@ -274,7 +306,7 @@ const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, user
                       {calcData.pedestals?.map((p, i) => {
                         const mm = convertToMm(p.height)
                         const prod = pedestalOptions[selectedCategory].find((o) => mm >= o.min && mm <= o.max)
-                        const id = prod ? prod.id : 'Unmatched'
+                        const id = prod ? prod.id : t('calculator.unmatched')
                         const [cx, cy] = Pp([p.x, p.y])
                         return <circle key={i} cx={cx} cy={cy} r={2.5} fill={colourMap[id] || '#64748B'} />
                       })}
@@ -298,12 +330,12 @@ const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, user
           {/* Right: Schedule + Pricing */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 9, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>
-              Pedestal Schedule
+              {t('calculator.pedestalSchedule')}
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
               <thead>
                 <tr style={{ background: '#0F172A' }}>
-                  {['', 'SKU', 'Range mm', 'Qty'].map((h, i) => (
+                  {['', 'SKU', t('calculator.rangeMm'), t('calculator.qty')].map((h, i) => (
                     <th key={i} style={{
                       padding: '8px 10px',
                       textAlign: i === 3 ? 'right' : 'left',
@@ -334,7 +366,7 @@ const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, user
                     <td style={{ padding: '8px 10px' }}>
                       <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#94A3B8', display: 'inline-block' }} />
                     </td>
-                    <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0F172A' }}>Tiles (600×600)</td>
+                    <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0F172A' }}>{t('calculator.tiles600')}</td>
                     <td style={{ padding: '8px 10px', color: '#475569' }}>—</td>
                     <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#0F172A' }}>{totalTiles}</td>
                   </tr>
@@ -342,8 +374,8 @@ const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, user
               </tbody>
               <tfoot>
                 <tr style={{ borderTop: '2px solid #0F172A', background: '#0F172A' }}>
-                  <td colSpan={2} style={{ padding: '10px 10px', fontWeight: 800, color: '#fff', fontSize: 12 }}>Total</td>
-                  <td style={{ padding: '10px 10px', color: 'rgba(255,255,255,0.6)', fontSize: 10 }}>{totalTiles} tiles</td>
+                  <td colSpan={2} style={{ padding: '10px 10px', fontWeight: 800, color: '#fff', fontSize: 12 }}>{t('calculator.total')}</td>
+                  <td style={{ padding: '10px 10px', color: 'rgba(255,255,255,0.6)', fontSize: 10 }}>{totalTiles} {t('calculator.tiles').toLowerCase()}</td>
                   <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 800, color: '#fff', fontSize: 13 }}>{totalPedestals}</td>
                 </tr>
               </tfoot>
@@ -352,7 +384,7 @@ const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, user
             {/* Notes on print */}
             {notes.trim() && (
               <div style={{ marginTop: 12, padding: '8px 10px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 6 }}>
-                <div style={{ fontSize: 9, fontWeight: 700, color: '#92400E', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 4 }}>Project Notes</div>
+                <div style={{ fontSize: 9, fontWeight: 700, color: '#92400E', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 4 }}>{t('calculator.projectNotes')}</div>
                 <div style={{ fontSize: 10, color: '#78350F', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{notes}</div>
               </div>
             )}
@@ -363,12 +395,12 @@ const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, user
               background: '#F8FAFC', border: '1px solid #E2E8F0',
               borderRadius: 6, fontSize: 8, color: '#94A3B8', lineHeight: 1.6,
             }}>
-              <strong style={{ color: '#64748B' }}>Disclaimer:</strong> Quantities are based on computed pedestal heights. Heights outside defined SKU ranges are listed as Unmatched. Verify site conditions before placing any order.
+              <strong style={{ color: '#64748B' }}>{t('calculator.disclaimerLabel')}:</strong> {t('calculator.disclaimerText')}
             </div>
 
             {/* Print footer */}
             <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', fontSize: 8, color: '#94A3B8' }}>
-              <span>Generated by ENMON Pedestal Calculator</span>
+              <span>{t('calculator.generatedBy')}</span>
               <span>enmon.ae &nbsp;·&nbsp; {today}</span>
             </div>
           </div>
@@ -377,126 +409,96 @@ const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, user
       </div>
 
       {/* ===== SCREEN LAYOUT ===== */}
-      <div className="qs-screen" style={{ display: 'flex', gap: 20, alignItems: 'flex-start', height: '100%' }}>
+      <div
+        className="qs-screen"
+        style={{
+          display: 'flex',
+          alignItems: 'stretch',
+          gap: 16,
+          flex: 1,
+          width: '100%',
+          minHeight: 0,
+          fontFamily: quoteFontFamily,
+        }}
+      >
 
         {/* Canvas area */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid var(--pc-line)',
-          }}>
-            <div>
-              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--pc-ink-3)' }}>Layout Plan</span>
-              {projectName && <span style={{ fontSize: 11, color: 'var(--pc-ink-3)', marginLeft: 10 }}>{projectName}</span>}
-            </div>
-            <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--pc-ink-3)' }}>
-              <span><strong style={{ color: 'var(--pc-ink)' }}>{totalPedestals}</strong> pedestals</span>
-              <span><strong style={{ color: 'var(--pc-ink)' }}>{totalTiles}</strong> tiles</span>
-            </div>
-          </div>
-
-          <svg
-            width={CANVAS_WIDTH}
-            height={CANVAS_HEIGHT}
-            style={{ border: '1px solid var(--pc-line)', borderRadius: 8, display: 'block', background: '#FAFAFA' }}
-          >
-            {polyPointStrings.map((points, index) => (
-              <polygon key={index} points={points} fill="#EFF6FF" stroke="#0F172A" strokeWidth="2" />
-            ))}
-            {calcData.tiles?.map((tile, i) => (
-              <g key={i}>
-                {normalizeTileShapeRings(tile.shape).map((poly, j) => (
-                  <polygon key={j} points={poly.map((pt) => P(pt).join(',')).join(' ')} fill="none" stroke="#d1d5db" strokeWidth="1" />
-                ))}
-              </g>
-            ))}
-            {calcData.pedestals?.map((p, i) => {
-              const mm = convertToMm(p.height)
-              const prod = pedestalOptions[selectedCategory].find((o) => mm >= o.min && mm <= o.max)
-              const id = prod ? prod.id : 'Unmatched'
-              const [cx, cy] = P([p.x, p.y])
-              return (
-                <circle
-                  key={i} cx={cx} cy={cy} r={3.5}
-                  fill={colourMap[id] || '#64748B'}
-                  onMouseEnter={() => { setHoveredPedestal(p); setTooltipPosition({ x: cx, y: cy }) }}
-                  onMouseLeave={() => setHoveredPedestal(null)}
-                  style={{ cursor: 'pointer' }}
-                />
-              )
-            })}
-            {hoveredPedestal && (() => {
-              const heightText = formatHeight(hoveredPedestal.height, unitSystem)
-              const tw = Math.max(70, heightText.length * 7 + 20)
-              return (
-                <g>
-                  <rect x={tooltipPosition.x - tw / 2} y={tooltipPosition.y - 32} width={tw} height={22} fill="rgba(15,23,42,0.9)" rx={5} />
-                  <text x={tooltipPosition.x} y={tooltipPosition.y - 17} fill="white" fontSize="12" textAnchor="middle" fontFamily="Arial, sans-serif" fontWeight="600">{heightText}</text>
-                </g>
-              )
-            })()}
-          </svg>
-
-          {/* Legend */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 18px', marginTop: 10 }}>
-            {Object.entries(grouped).map(([id, qty]) => (
-              <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: colourMap[id] || '#64748B', display: 'inline-block', flexShrink: 0 }} />
-                <span style={{ fontWeight: 600, color: 'var(--pc-ink)' }}>{id}</span>
-                <span style={{ color: 'var(--pc-ink-3)' }}>({qty})</span>
-              </div>
-            ))}
-          </div>
+        <div
+          ref={canvasContainerRef}
+          className="pc-panel"
+          style={{
+            flex: '1 1 0',
+            minWidth: 0,
+            overflow: 'hidden',
+            background: 'var(--pc-canvas-bg)',
+            position: 'relative',
+          }}
+        >
+          <TileCanvas
+            userPolygon={calcData.userPolygon || []}
+            dimensionLabels={[]}
+            tiles={calcData.tiles || []}
+            pedestals={calcData.pedestals || []}
+            showSubTiles={true}
+            unitSystem={unitSystem}
+            cmToPx={cmToPx}
+            onPedestalClick={() => {}}
+            zoom={zoom}
+            panOffset={panOffset}
+            setPanOffset={setPanOffset}
+            setZoom={setZoom}
+            showPedestalShadows={false}
+            pedestalColorResolver={quotePedestalColor}
+            pedestalTooltipFormatter={(pedestal) => formatHeight(pedestal.height || 0, unitSystem)}
+            width={canvasSize.width}
+            height={canvasSize.height}
+          />
         </div>
 
         {/* Right panel */}
-        <div style={{
-          width: 268,
-          flexShrink: 0,
-          height: CANVAS_HEIGHT + 40,
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 16,
-        }}>
+        <aside
+          className="pc-panel"
+          style={{
+            width: 'min(280px, 100%)',
+            maxWidth: '100%',
+            padding: 14,
+            background: 'var(--pc-surface)',
+            color: 'var(--pc-ink)',
+            overflowY: 'auto',
+            boxSizing: 'border-box',
+            flex: '0 0 280px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 16,
+          }}
+        >
           {onShowInstructions && (
             <button
+              className="pc-btn"
+              type="button"
               onClick={onShowInstructions}
-              style={{
-                width: '100%', padding: '9px 14px',
-                backgroundColor: 'var(--pc-surface-2)',
-                color: 'var(--pc-ink-3)',
-                border: '1px solid var(--pc-line)',
-                borderRadius: 8, fontSize: 13, fontWeight: 500,
-                cursor: 'pointer', display: 'flex', alignItems: 'center',
-                justifyContent: 'center', gap: 8,
-              }}
+              style={{ width: '100%', justifyContent: 'center' }}
             >
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" fill="none" />
-                <path d="M8 7.5V11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                <circle cx="8" cy="5" r="0.75" fill="currentColor" />
-              </svg>
-              Step Instructions
+              {t('calculator.stepInstructions')}
             </button>
           )}
 
           {/* Summary section */}
           <div>
-            <SectionLabel>Summary</SectionLabel>
+            <SectionLabel>{t('calculator.summary')}</SectionLabel>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <StatCard label="Tiles" value={totalTiles.toLocaleString()} />
-              <StatCard label="Pedestals" value={totalPedestals.toLocaleString()} />
-              {metrics?.area && <StatCard label={`Area (${metrics.areaUnit})`} value={metrics.area} />}
+              <StatCard label={t('calculator.tiles')} value={totalTiles.toLocaleString()} />
+              <StatCard label={t('calculator.pedestals')} value={totalPedestals.toLocaleString()} />
+              {metrics?.area && <StatCard label={`${t('projects.area')} (${metrics.areaUnit})`} value={metrics.area} />}
               {metrics?.averageHeight && metrics.averageHeight !== '--' && (
-                <StatCard label={`Avg Height (${metrics.heightUnit})`} value={metrics.averageHeight} />
+                <StatCard label={`${t('calculator.avgHeight')} (${metrics.heightUnit})`} value={metrics.averageHeight} />
               )}
             </div>
           </div>
 
           {/* Category */}
           <div>
-            <SectionLabel>Pedestal Category</SectionLabel>
+            <SectionLabel>{t('calculator.pedestalCategory')}</SectionLabel>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
               {Object.keys(pedestalOptions).map((cat) => (
                 <button
@@ -520,7 +522,7 @@ const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, user
 
           {/* SKU Breakdown */}
           <div>
-            <SectionLabel>SKU Breakdown</SectionLabel>
+            <SectionLabel>{t('calculator.skuBreakdown')}</SectionLabel>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
               {Object.entries(grouped).map(([id, qty]) => {
                 const opt = Object.values(pedestalOptions).flat().find((o) => o.id === id)
@@ -550,7 +552,7 @@ const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, user
               })}
               {Object.keys(grouped).length === 0 && (
                 <div style={{ padding: '12px 10px', color: 'var(--pc-ink-3)', fontSize: 12, textAlign: 'center', background: 'var(--pc-surface-2)', border: '1px solid var(--pc-line)', borderRadius: 8 }}>
-                  No pedestal data yet
+                  {t('calculator.noPedestalData')}
                 </div>
               )}
             </div>
@@ -558,11 +560,11 @@ const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, user
 
           {/* Notes */}
           <div>
-            <SectionLabel>Notes</SectionLabel>
+            <SectionLabel>{t('calculator.notes')}</SectionLabel>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Add project notes (printed on quote)..."
+              placeholder={t('calculator.addProjectNotes')}
               rows={3}
               style={{
                 width: '100%', boxSizing: 'border-box',
@@ -574,7 +576,7 @@ const QuoteStep = ({ calcData, unitSystem, onShowInstructions, projectName, user
               }}
             />
           </div>
-        </div>
+        </aside>
       </div>
     </div>
   )
@@ -597,6 +599,14 @@ QuoteStep.propTypes = {
     averageHeight: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
     heightUnit: PropTypes.string,
   }),
+  gridSize: PropTypes.number.isRequired,
+  zoom: PropTypes.number.isRequired,
+  setZoom: PropTypes.func.isRequired,
+  panOffset: PropTypes.shape({
+    x: PropTypes.number.isRequired,
+    y: PropTypes.number.isRequired,
+  }).isRequired,
+  setPanOffset: PropTypes.func.isRequired,
 }
 
 export default QuoteStep

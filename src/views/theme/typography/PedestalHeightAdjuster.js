@@ -5,6 +5,7 @@ import polygonClipping from 'polygon-clipping'
 import TileCanvas from '../../components/PedestalCalculator/TileCanvas'
 import PedestalEditor from '../../components/PedestalCalculator/PedestalEditor'
 import LoadingOverlay from '../../components/PedestalCalculator/LoadingOverlay'
+import { useLanguage } from '../../../context/LanguageContext'
 import {
   findContainingTriangle,
   barycentricCoordinates,
@@ -193,6 +194,7 @@ const PedestalHeightAdjuster = ({
   panOffset,
   setPanOffset,
 }) => {
+  const { t } = useLanguage()
   const canvasContainerRef = useRef(null)
   const [canvasSize, setCanvasSize] = useState({ width: 900, height: 600 })
 
@@ -786,7 +788,7 @@ const PedestalHeightAdjuster = ({
     if (editingPedestalIndex == null) return
     const numericVal = parseFloat(pedestalTempHeight)
     if (isNaN(numericVal)) {
-      alert('Invalid height entered. Please enter a number.')
+      alert(t('calculator.invalidHeight'))
       return
     }
     // Convert back to cm if in imperial
@@ -1065,7 +1067,7 @@ const PedestalHeightAdjuster = ({
     if (!selectedPedestals.length) return
     const numericVal = parseFloat(heightValue)
     if (isNaN(numericVal)) {
-      alert('Invalid height entered. Please enter a number.')
+      alert(t('calculator.invalidHeight'))
       return
     }
     const newAdjusted = [...adjustedPedestals]
@@ -1133,7 +1135,7 @@ const PedestalHeightAdjuster = ({
           width={canvasSize.width}
           height={canvasSize.height}
         />
-        <LoadingOverlay visible={isComputing} label="Computing heights…" />
+        <LoadingOverlay visible={isComputing} label={t('calculator.computingHeights')} />
       </div>
 
       {/* Pedestal Editor (Modal) */}
@@ -1191,30 +1193,30 @@ const PedestalHeightAdjuster = ({
               onClick={onShowInstructions}
               style={{ width: '100%', justifyContent: 'center' }}
             >
-              Step Instructions
+              {t('calculator.stepInstructions')}
             </button>
           </div>
         )}
 
-        <div className="pc-rail-label">Pedestal Heights</div>
+        <div className="pc-rail-label">{t('calculator.pedestalHeightsTitle')}</div>
         <div style={{ color: 'var(--pc-ink-3)', fontSize: 12, lineHeight: 1.5, marginBottom: 16 }}>
-          Click a pedestal to edit one height. Hold Shift and drag to set multiple pedestals.
+          {t('calculator.pedestalHeightsHelp')}
         </div>
 
         <div style={{ marginBottom: '16px' }}>
-          <div className="pc-rail-label">Canvas</div>
+          <div className="pc-rail-label">{t('calculator.canvas')}</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
             <button className="pc-btn" type="button" onClick={handleZoomIn}>
-              Zoom In
+              {t('calculator.zoomIn')}
             </button>
             <button className="pc-btn" type="button" onClick={handleZoomOut}>
-              Zoom Out
+              {t('calculator.zoomOut')}
             </button>
           </div>
         </div>
 
         <div style={{ marginBottom: '16px' }}>
-          <div className="pc-rail-label">Data</div>
+          <div className="pc-rail-label">{t('calculator.data')}</div>
           <button
             className="pc-btn"
             type="button"
@@ -1225,7 +1227,7 @@ const PedestalHeightAdjuster = ({
               justifyContent: 'center',
             }}
           >
-            Clear Saved Heights
+            {t('calculator.clearSavedHeights')}
           </button>
         </div>
       </aside>

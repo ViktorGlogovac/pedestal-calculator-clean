@@ -4,6 +4,7 @@ import CanvasArea from '../../components/PedestalCalculator/CanvasArea'
 import SidePanel from '../../components/PedestalCalculator/SidePanel'
 import HeightPopup from '../../components/PedestalCalculator/HeightPopup'
 import LinePopup from '../../components/PedestalCalculator/LinePopup'
+import { useLanguage } from '../../../context/LanguageContext'
 
 const CANVAS_WIDTH = 900
 const CANVAS_HEIGHT = 600
@@ -23,6 +24,7 @@ const PedestalGrid = ({
   panOffset,
   setPanOffset,
 }) => {
+  const { t } = useLanguage()
   // Load initial state from localStorage or use defaults
   const [shapes, setShapes] = useState(() => {
     const savedShapes = localStorage.getItem('pedestalGrid_shapes')
@@ -359,7 +361,7 @@ const PedestalGrid = ({
   const handleLinePopupSave = () => {
     const inputValue = parseFloat(linePopup.tempLength)
     if (isNaN(inputValue) || inputValue <= 0) {
-      alert('Please enter a valid positive number for length.')
+      alert(t('calculator.invalidPositiveLength'))
       return
     }
     // Convert popup value to cm or m

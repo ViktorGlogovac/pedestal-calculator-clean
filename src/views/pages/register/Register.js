@@ -1,11 +1,13 @@
 import React, { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../../context/AuthContext'
+import { useLanguage } from '../../../context/LanguageContext'
 import AuthShell from '../auth/AuthShell'
 
 const Register = () => {
   const navigate = useNavigate()
   const { user, signUp, isConfigured } = useAuth()
+  const { t } = useLanguage()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -23,12 +25,12 @@ const Register = () => {
     setSuccessMessage('')
 
     if (!email || !password) {
-      setErrorMessage('Enter an email and password.')
+      setErrorMessage(t('auth.enterAccountPassword'))
       return
     }
 
     if (password !== confirmPassword) {
-      setErrorMessage('Passwords do not match.')
+      setErrorMessage(t('auth.passwordsMismatch'))
       return
     }
 
@@ -46,18 +48,18 @@ const Register = () => {
       return
     }
 
-    setSuccessMessage('Account created. Check your email if confirmation is enabled in Supabase.')
+    setSuccessMessage(t('auth.accountCreated'))
   }
 
   return (
     <AuthShell>
       <form onSubmit={handleSubmit}>
-        <h1 className="pc-auth-title">Create Account</h1>
-        <p className="pc-auth-sub">Save project revisions and return to quotes later.</p>
+        <h1 className="pc-auth-title">{t('auth.createAccount')}</h1>
+        <p className="pc-auth-sub">{t('auth.createAccountSubtitle')}</p>
 
         {!isConfigured && (
           <div className="pc-auth-alert warn">
-            Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to your env file.
+            {t('auth.envMissing')}
           </div>
         )}
         {errorMessage && (
@@ -68,7 +70,7 @@ const Register = () => {
         )}
 
         <label className="pc-field">
-          <span>Email</span>
+          <span>{t('auth.email')}</span>
           <input
             type="email"
             autoComplete="email"
@@ -78,7 +80,7 @@ const Register = () => {
         </label>
 
         <label className="pc-field">
-          <span>Password</span>
+          <span>{t('auth.password')}</span>
           <input
             type="password"
             autoComplete="new-password"
@@ -88,7 +90,7 @@ const Register = () => {
         </label>
 
         <label className="pc-field">
-          <span>Confirm Password</span>
+          <span>{t('auth.confirmPassword')}</span>
           <input
             type="password"
             autoComplete="new-password"
@@ -103,13 +105,13 @@ const Register = () => {
           disabled={submitting || !isConfigured}
           style={{ width: '100%', justifyContent: 'center', marginTop: 4 }}
         >
-          {submitting ? 'Creating account...' : 'Create Account'}
+          {submitting ? t('auth.creatingAccount') : t('auth.createAccount')}
         </button>
 
         <div style={{ marginTop: 18, color: 'var(--pc-ink-3)', fontSize: 13 }}>
-          Already registered?{' '}
+          {t('auth.alreadyRegistered')}{' '}
           <Link to="/login" className="pc-link-btn">
-            Sign in
+            {t('auth.signInLink')}
           </Link>
         </div>
       </form>

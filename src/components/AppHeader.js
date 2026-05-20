@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
 
+import { useLanguage } from '../context/LanguageContext'
 import { AppBreadcrumb } from './index'
 import { AppHeaderDropdown } from './header/index'
 
@@ -20,6 +21,7 @@ const useTheme = () => {
 const AppHeader = () => {
   const headerRef = useRef()
   const { theme, setTheme } = useTheme()
+  const { t, language, setLanguage } = useLanguage()
   const dispatch = useDispatch()
   const sidebarShow = useSelector((state) => state.sidebarShow)
 
@@ -73,12 +75,16 @@ const AppHeader = () => {
             lineHeight: 1,
             marginLeft: -4,
           }}
-          aria-label="Toggle sidebar"
+          aria-label={t('header.toggleSidebar')}
         >
           ☰
         </button>
 
         <div style={{ flex: 1 }} />
+
+        <LanguageToggle language={language} setLanguage={setLanguage} />
+
+        <div style={{ width: 1, height: 20, background: 'var(--pc-line, #e5e5e5)', margin: '0 4px' }} />
 
         <ThemeToggle theme={theme} setTheme={setTheme} />
 
@@ -97,6 +103,7 @@ const AppHeader = () => {
 const ThemeToggle = ({ theme, setTheme }) => {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
+  const { t } = useLanguage()
 
   useEffect(() => {
     const handler = (e) => {
@@ -121,7 +128,7 @@ const ThemeToggle = ({ theme, setTheme }) => {
           padding: 4,
           color: 'var(--pc-ink-2, #333)',
         }}
-        aria-label="Toggle theme"
+        aria-label={t('header.toggleTheme')}
       >
         {icon}
       </button>
@@ -141,9 +148,9 @@ const ThemeToggle = ({ theme, setTheme }) => {
           }}
         >
           {[
-            { value: 'light', label: '☀ Light' },
-            { value: 'dark', label: '🌙 Dark' },
-            { value: 'auto', label: '⚙ Auto' },
+            { value: 'light', label: `☀ ${t('header.light')}` },
+            { value: 'dark', label: `🌙 ${t('header.dark')}` },
+            { value: 'auto', label: `⚙ ${t('header.auto')}` },
           ].map(({ value, label }) => (
             <button
               key={value}
@@ -158,6 +165,85 @@ const ThemeToggle = ({ theme, setTheme }) => {
                 textAlign: 'left',
                 padding: '8px 14px',
                 background: theme === value ? 'var(--pc-surface-3, #f0f0ed)' : 'transparent',
+                border: 0,
+                cursor: 'pointer',
+                fontSize: 13,
+                color: 'var(--pc-ink-2, #333)',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const LanguageToggle = ({ language, setLanguage }) => {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  const { t } = useLanguage()
+
+  useEffect(() => {
+    const handler = (event) => {
+      if (ref.current && !ref.current.contains(event.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        style={{
+          background: 'transparent',
+          border: 0,
+          cursor: 'pointer',
+          fontSize: 13,
+          padding: '4px 6px',
+          color: 'var(--pc-ink-2, #333)',
+          borderRadius: 6,
+        }}
+        aria-label={t('header.language')}
+        title={t('header.language')}
+      >
+        {language === 'zh' ? '中文' : 'EN'}
+      </button>
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            right: 0,
+            top: 'calc(100% + 4px)',
+            background: 'var(--pc-surface, #fff)',
+            border: '1px solid var(--pc-line, #e5e5e5)',
+            borderRadius: 8,
+            boxShadow: 'var(--pc-shadow-2, 0 8px 24px rgba(0,0,0,0.1))',
+            zIndex: 1040,
+            padding: '4px 0',
+            minWidth: 120,
+          }}
+        >
+          {[
+            { value: 'en', label: t('header.english') },
+            { value: 'zh', label: t('header.chinese') },
+          ].map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => {
+                setLanguage(value)
+                setOpen(false)
+              }}
+              style={{
+                display: 'block',
+                width: '100%',
+                textAlign: 'left',
+                padding: '8px 14px',
+                background: language === value ? 'var(--pc-surface-3, #f0f0ed)' : 'transparent',
                 border: 0,
                 cursor: 'pointer',
                 fontSize: 13,

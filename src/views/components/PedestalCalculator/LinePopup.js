@@ -1,4 +1,5 @@
 import React from 'react'
+import { useLanguage } from '../../../context/LanguageContext'
 
 function LinePopup({
   top,
@@ -10,6 +11,7 @@ function LinePopup({
   onCancel,
   onDelete,
 }) {
+  const { t } = useLanguage()
   return (
     <div
       style={{
@@ -35,7 +37,7 @@ function LinePopup({
           marginBottom: '20px',
         }}
       >
-        <span style={{ fontSize: '18px', fontWeight: 'bold' }}>Set Line Length</span>
+        <span style={{ fontSize: '18px', fontWeight: 'bold' }}>{t('calculator.setLineLength')}</span>
         <button
           onClick={onCancel}
           style={{
@@ -56,7 +58,7 @@ function LinePopup({
           alignItems: 'center',
         }}
       >
-        <label style={{ flex: 1, fontSize: '16px', color: '#333' }}>Length:</label>
+        <label style={{ flex: 1, fontSize: '16px', color: '#333' }}>{t('calculator.length')}:</label>
         <input
           type="text"
           value={tempLength}
@@ -88,7 +90,7 @@ function LinePopup({
             flex: 1,
           }}
         >
-          Confirm
+          {t('calculator.confirm')}
         </button>
         <button
           onClick={onDelete}
@@ -103,7 +105,7 @@ function LinePopup({
             flex: 1,
           }}
         >
-          Delete
+          {t('common.delete')}
         </button>
         <button
           onClick={onCancel}
@@ -118,7 +120,7 @@ function LinePopup({
             flex: 1,
           }}
         >
-          Cancel
+          {t('common.cancel')}
         </button>
       </div>
     </div>

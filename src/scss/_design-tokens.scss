@@ -550,6 +550,11 @@
     font-weight: 600;
     font-size: 14px;
     color: var(--pc-ink);
+    .pc-topbar-logo {
+      display: block;
+      width: 94px;
+      height: auto;
+    }
     .mark {
       width: 26px;
       height: 26px;

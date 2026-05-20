@@ -1,7 +1,9 @@
 import React from 'react'
 import PropTypes from 'prop-types'
+import { useLanguage } from '../../../context/LanguageContext'
 
 function SidePanel(props) {
+  const { t } = useLanguage()
   const {
     unitSystem,
     onUnitSystemChange,
@@ -49,12 +51,12 @@ function SidePanel(props) {
             onClick={onShowInstructions}
             style={{ width: '100%', justifyContent: 'center' }}
           >
-            Step Instructions
+            {t('calculator.stepInstructions')}
           </button>
         </PanelSection>
       )}
 
-      <PanelSection title="Units">
+      <PanelSection title={t('calculator.units')}>
         <div className="pc-seg" style={{ width: '100%' }}>
           <button
             type="button"
@@ -62,7 +64,7 @@ function SidePanel(props) {
             onClick={() => onUnitSystemChange('imperial')}
             style={{ flex: 1 }}
           >
-            Imperial
+            {t('calculator.imperial')}
           </button>
           <button
             type="button"
@@ -70,23 +72,23 @@ function SidePanel(props) {
             onClick={() => onUnitSystemChange('metric')}
             style={{ flex: 1 }}
           >
-            Metric
+            {t('calculator.metric')}
           </button>
         </div>
       </PanelSection>
 
-      <PanelSection title="Canvas">
+      <PanelSection title={t('calculator.canvas')}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
           <button className="pc-btn" type="button" onClick={handleUndo} disabled={!canUndo}>
-            Undo
+            {t('calculator.undo')}
           </button>
           <button className="pc-btn" type="button" onClick={handleRedo} disabled={!canRedo}>
-            Redo
+            {t('calculator.redo')}
           </button>
         </div>
       </PanelSection>
 
-      <PanelSection title="Shapes">
+      <PanelSection title={t('calculator.shapesPanel')}>
         <div
           style={{
             display: 'flex',
@@ -97,10 +99,10 @@ function SidePanel(props) {
           }}
         >
           <span style={{ color: 'var(--pc-ink-3)', fontSize: 12 }}>
-            {shapes.length} region{shapes.length === 1 ? '' : 's'}
+            {t(shapes.length === 1 ? 'calculator.region_one' : 'calculator.region_other', { count: shapes.length })}
           </span>
           <button className="pc-btn primary" type="button" onClick={handleNewShape}>
-            New Shape
+            {t('calculator.newShape')}
           </button>
         </div>
 
@@ -157,7 +159,7 @@ function SidePanel(props) {
                       className="pc-mono"
                       style={{ fontSize: 10, color: 'var(--pc-ink-3)', marginTop: 2 }}
                     >
-                      {shape.points.length} points {shape.isLoopClosed ? 'closed' : 'open'}
+                      {t('calculator.points', { count: shape.points.length })} {shape.isLoopClosed ? t('calculator.closed') : t('calculator.open')}
                     </div>
                   </div>
                 )}
@@ -170,7 +172,7 @@ function SidePanel(props) {
                       setActiveEditIndex(index)
                     }}
                   >
-                    Rename
+                    {t('calculator.rename')}
                   </button>
                   <button
                     className="pc-btn ghost"
@@ -181,7 +183,7 @@ function SidePanel(props) {
                       handleDeleteShape(index)
                     }}
                   >
-                    Delete
+                    {t('common.delete')}
                   </button>
                 </div>
               </div>
@@ -190,15 +192,15 @@ function SidePanel(props) {
         </div>
       </PanelSection>
 
-      <PanelSection title="Reference Image">
+      <PanelSection title={t('calculator.referenceImage')}>
         {!overlayImage ? (
           <button className="pc-btn" type="button" onClick={onOverlayUpload} style={{ width: '100%', justifyContent: 'center' }}>
-            Upload Image
+            {t('calculator.uploadImage')}
           </button>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: 'var(--pc-ink-3)' }}>Opacity</span>
+              <span style={{ fontSize: 12, color: 'var(--pc-ink-3)' }}>{t('calculator.opacity')}</span>
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pc-ink)' }}>
                 {Math.round(overlayOpacity * 100)}%
               </span>
@@ -214,17 +216,17 @@ function SidePanel(props) {
             />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
               <button className="pc-btn" type="button" onClick={onOverlayUpload}>
-                Replace
+                {t('calculator.replace')}
               </button>
               <button className="pc-btn ghost" type="button" style={{ color: 'var(--pc-danger)' }} onClick={onOverlayClear}>
-                Remove
+                {t('calculator.remove')}
               </button>
             </div>
           </div>
         )}
       </PanelSection>
 
-      <PanelSection title="Shortcuts">
+      <PanelSection title={t('calculator.shortcuts')}>
         <div
           style={{
             display: 'grid',
@@ -234,12 +236,12 @@ function SidePanel(props) {
             lineHeight: 1.5,
           }}
         >
-          <Shortcut keys="Space" label="pan canvas" />
-          <Shortcut keys="Ctrl/Cmd Z" label="undo point" />
-          <Shortcut keys="Ctrl/Cmd Shift Z" label="redo point" />
-          <Shortcut keys="Ctrl/Cmd Y" label="redo point" />
-          <Shortcut keys="Esc" label="pause or cancel edit" />
-          <Shortcut keys="Right click" label="corner and edge options" />
+          <Shortcut keys="Space" label={t('calculator.shortcutPanCanvas')} />
+          <Shortcut keys="Ctrl/Cmd Z" label={t('calculator.shortcutUndoPoint')} />
+          <Shortcut keys="Ctrl/Cmd Shift Z" label={t('calculator.shortcutRedoPoint')} />
+          <Shortcut keys="Ctrl/Cmd Y" label={t('calculator.shortcutRedoPoint')} />
+          <Shortcut keys="Esc" label={t('calculator.shortcutPauseCancel')} />
+          <Shortcut keys="Right click" label={t('calculator.shortcutCornerEdge')} />
         </div>
       </PanelSection>
     </aside>

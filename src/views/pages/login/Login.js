@@ -1,19 +1,21 @@
 import React, { useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../../context/AuthContext'
+import { useLanguage } from '../../../context/LanguageContext'
 import AuthShell from '../auth/AuthShell'
 
 const Login = () => {
   const navigate = useNavigate()
   const location = useLocation()
-  const { user, signIn, loading, isConfigured } = useAuth()
+  const { user, isGuest, signIn, continueAsGuest, loading, isConfigured } = useAuth()
+  const { t } = useLanguage()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const from = location.state?.from?.pathname || '/pedestal-calculator'
 
-  if (user) {
+  if (user || isGuest) {
     return <Navigate to={from} replace />
   }
 
@@ -22,7 +24,7 @@ const Login = () => {
     setErrorMessage('')
 
     if (!email || !password) {
-      setErrorMessage('Enter your email and password.')
+      setErrorMessage(t('auth.enterEmailPassword'))
       return
     }
 
@@ -38,15 +40,20 @@ const Login = () => {
     navigate(from, { replace: true })
   }
 
+  const handleGuest = () => {
+    continueAsGuest()
+    navigate(from, { replace: true })
+  }
+
   return (
     <AuthShell>
       <form onSubmit={handleSubmit}>
-        <h1 className="pc-auth-title">Sign In</h1>
-        <p className="pc-auth-sub">Open saved layouts, AI imports, and quote history.</p>
+        <h1 className="pc-auth-title">{t('auth.signIn')}</h1>
+        <p className="pc-auth-sub">{t('auth.signInSubtitle')}</p>
 
         {!isConfigured && (
           <div className="pc-auth-alert warn">
-            Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to your env file.
+            {t('auth.envMissing')}
           </div>
         )}
         {errorMessage && (
@@ -54,7 +61,7 @@ const Login = () => {
         )}
 
         <label className="pc-field">
-          <span>Email</span>
+          <span>{t('auth.email')}</span>
           <input
             type="email"
             autoComplete="email"
@@ -64,7 +71,7 @@ const Login = () => {
         </label>
 
         <label className="pc-field">
-          <span>Password</span>
+          <span>{t('auth.password')}</span>
           <input
             type="password"
             autoComplete="current-password"
@@ -79,13 +86,23 @@ const Login = () => {
           disabled={submitting || loading || !isConfigured}
           style={{ width: '100%', justifyContent: 'center', marginTop: 4 }}
         >
-          {submitting ? 'Signing in...' : 'Sign In'}
+          {submitting ? t('auth.signingIn') : t('auth.signIn')}
+        </button>
+
+        <button
+          className="pc-btn lg"
+          type="button"
+          onClick={handleGuest}
+          disabled={submitting || loading}
+          style={{ width: '100%', justifyContent: 'center', marginTop: 10 }}
+        >
+          {t('auth.continueAsGuest')}
         </button>
 
         <div style={{ marginTop: 18, color: 'var(--pc-ink-3)', fontSize: 13 }}>
-          Need an account?{' '}
+          {t('auth.needAccount')}{' '}
           <Link to="/register" className="pc-link-btn">
-            Create one
+            {t('auth.createOne')}
           </Link>
         </div>
       </form>

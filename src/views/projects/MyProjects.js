@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { useLanguage } from '../../context/LanguageContext'
 import { useProject } from '../../context/ProjectContext'
 import { deleteProject, listProjects } from '../../lib/projectService'
 
 const MyProjects = () => {
   const { user, isConfigured } = useAuth()
+  const { t } = useLanguage()
   const { projects, setProjects, activeProjectId, setPendingLoadId } = useProject()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
@@ -28,21 +30,21 @@ const MyProjects = () => {
   }
 
   const handleDelete = async (projectId, projectName) => {
-    if (!window.confirm(`Delete "${projectName}"? This cannot be undone.`)) return
+    if (!window.confirm(t('projects.deleteConfirm', { name: projectName }))) return
     const { error: err } = await deleteProject(projectId, user.id)
     if (err) { setError(err.message); return }
     setProjects((prev) => prev.filter((p) => p.id !== projectId))
-    setNotice(`Deleted "${projectName}".`)
+    setNotice(t('projects.deletedNotice', { name: projectName }))
   }
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '24px 16px' }}>
       <div style={{ marginBottom: '24px' }}>
-        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#0F172A', margin: 0 }}>My Projects</h2>
+        <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#0F172A', margin: 0 }}>{t('projects.myProjects')}</h2>
         <p style={{ color: '#64748B', marginTop: '4px', marginBottom: 0 }}>
           {projects.length > 0
-            ? `${projects.length} saved project${projects.length !== 1 ? 's' : ''}`
-            : 'No saved projects yet'}
+            ? t(projects.length === 1 ? 'projects.savedProjectCount_one' : 'projects.savedProjectCount_other', { count: projects.length })
+            : t('projects.noSavedProjectsYet')}
         </p>
       </div>
 
@@ -61,18 +63,18 @@ const MyProjects = () => {
 
       {!isConfigured && (
         <div style={{ padding: '10px 14px', borderRadius: 8, background: 'oklch(96% 0.03 80)', color: 'oklch(38% 0.1 65)', border: '1px solid oklch(85% 0.08 80)', marginBottom: 12 }}>
-          Supabase is not configured. Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> to enable project saving.
+          {t('projects.supabaseMissing')}
         </div>
       )}
 
       {loading ? (
-        <div style={{ color: '#64748B', padding: '40px 0', textAlign: 'center' }}>Loading projects…</div>
+        <div style={{ color: '#64748B', padding: '40px 0', textAlign: 'center' }}>{t('projects.loadingProjects')}</div>
       ) : projects.length === 0 ? (
         <div style={{ border: '1px dashed #CBD5E1', backgroundColor: '#F8FAFC', borderRadius: 12, textAlign: 'center', padding: '48px 24px' }}>
           <div style={{ fontSize: '40px', marginBottom: '12px' }}>📂</div>
-          <div style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>No saved projects</div>
+          <div style={{ fontSize: '16px', fontWeight: '600', color: '#475569', marginBottom: '8px' }}>{t('projects.noSavedProjects')}</div>
           <div style={{ fontSize: '14px', color: '#94A3B8', marginBottom: '20px' }}>
-            Save a project from the calculator to see it here.
+            {t('projects.saveAProject')}
           </div>
           <button
             type="button"
@@ -88,7 +90,7 @@ const MyProjects = () => {
               cursor: 'pointer',
             }}
           >
-            Go to Calculator
+            {t('projects.goToCalculator')}
           </button>
         </div>
       ) : (
@@ -117,7 +119,7 @@ const MyProjects = () => {
                           padding: '2px 8px',
                           borderRadius: '10px',
                         }}>
-                          Active
+                          {t('common.active')}
                         </span>
                       )}
                       <span style={{ fontSize: '16px', fontWeight: '600', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -125,10 +127,10 @@ const MyProjects = () => {
                       </span>
                     </div>
                     <div style={{ fontSize: '12px', color: '#94A3B8' }}>
-                      Last updated: {new Date(project.updated_at).toLocaleString()}
+                      {t('projects.lastUpdated', { value: new Date(project.updated_at).toLocaleString() })}
                     </div>
                     <div style={{ fontSize: '12px', color: '#CBD5E1', marginTop: '2px' }}>
-                      Created: {new Date(project.created_at).toLocaleString()}
+                      {t('projects.created', { value: new Date(project.created_at).toLocaleString() })}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
@@ -146,7 +148,7 @@ const MyProjects = () => {
                         cursor: 'pointer',
                       }}
                     >
-                      {isActive ? 'Reload' : 'Load'}
+                      {isActive ? t('common.reload') : t('common.load')}
                     </button>
                     <button
                       type="button"
@@ -162,7 +164,7 @@ const MyProjects = () => {
                         cursor: 'pointer',
                       }}
                     >
-                      Delete
+                      {t('common.delete')}
                     </button>
                   </div>
                 </div>

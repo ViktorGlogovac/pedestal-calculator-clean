@@ -7,13 +7,16 @@ import QuoteStep from './QuoteStep'
 import TileLayout from './TileLayout'
 import PedestalHeightAdjuster from './PedestalHeightAdjuster'
 import { useAuth } from '../../../context/AuthContext'
+import { useLanguage } from '../../../context/LanguageContext'
 import { useProject } from '../../../context/ProjectContext'
 import { buildProjectState, applyProjectState, clearProjectDraft } from '../../../lib/projectState'
 import { deleteProject, getProject, listProjects, saveProject } from '../../../lib/projectService'
 import AIDesignImport from './AIDesignImport'
+import enmonLogo from '../../../assets/brand/enmon-logo.svg'
 
 const PedestalCalculatorMain = () => {
   const { user, signOut, isConfigured } = useAuth()
+  const { t, language, setLanguage } = useLanguage()
   const {
     projects,
     setProjects,
@@ -136,32 +139,28 @@ const PedestalCalculatorMain = () => {
 
   // Steps data (number + label)
   const steps = [
-    { number: 1, label: 'Outline' },
-    { number: 2, label: 'Tiles' },
-    { number: 3, label: 'Heights' },
-    { number: 4, label: 'Quote' },
+    { number: 1, label: t('calculator.outline') },
+    { number: 2, label: t('calculator.tiles') },
+    { number: 3, label: t('calculator.heights') },
+    { number: 4, label: t('calculator.quote') },
   ]
 
   const stepInstructions = {
     1: {
-      title: 'Outline',
-      content:
-        'Draw your desired layout on the grid. Click and drag to create shapes. You can create multiple shapes to represent different areas of your space. Use the grid size controls to adjust the scale of your design.',
+      title: t('calculator.stepOutlineTitle'),
+      content: t('calculator.stepOutlineContent'),
     },
     2: {
-      title: 'Tile Layout',
-      content:
-        "In this step, you'll see how tiles will be arranged in your design. The system will automatically calculate the optimal tile placement based on your design. You can adjust tile sizes and patterns here.",
+      title: t('calculator.stepTilesTitle'),
+      content: t('calculator.stepTilesContent'),
     },
     3: {
-      title: 'Pedestal Heights',
-      content:
-        'Set the height for each pedestal in your design. This is crucial for proper drainage and leveling. You can adjust heights individually or use the bulk adjustment tools for efficiency.',
+      title: t('calculator.stepHeightsTitle'),
+      content: t('calculator.stepHeightsContent'),
     },
     4: {
-      title: 'Quote',
-      content:
-        "Review your complete design specifications and get a detailed quote. You'll see a breakdown of materials, quantities, and costs. You can make final adjustments before proceeding.",
+      title: t('calculator.stepQuoteTitle'),
+      content: t('calculator.stepQuoteContent'),
     },
   }
 
@@ -204,7 +203,7 @@ const PedestalCalculatorMain = () => {
     setPanOffset({ x: 0, y: 0 })
     setStep(1)
     setActiveProjectId(null)
-    setActiveProjectName('Untitled Project')
+    setActiveProjectName(t('projects.untitled'))
     setProjectRevision((prev) => prev + 1)
   }, [])
 
@@ -224,7 +223,7 @@ const PedestalCalculatorMain = () => {
 
     const trimmedName = (explicitName ?? projectNameInput).trim()
     if (!trimmedName) {
-      setProjectError('Enter a project name.')
+      setProjectError(t('projects.enterProjectName'))
       return
     }
 
@@ -259,7 +258,7 @@ const PedestalCalculatorMain = () => {
     setActiveProjectName(data.name)
     setSaveModalVisible(false)
     setSaveAsMode(false)
-    setProjectNotice(`Saved "${data.name}".`)
+    setProjectNotice(t('projects.savedNotice', { name: data.name }))
     refreshProjects()
   }
 
@@ -289,7 +288,7 @@ const PedestalCalculatorMain = () => {
     setActiveProjectId(data.id)
     setActiveProjectName(data.name)
     setProjectRevision((prev) => prev + 1)
-    setProjectNotice(`Loaded "${data.name}".`)
+    setProjectNotice(t('projects.loadedNotice', { name: data.name }))
   }
 
   const handleDeleteProject = async (projectId) => {
@@ -394,9 +393,7 @@ const PedestalCalculatorMain = () => {
     <div className="pc-root pc-workspace">
       <header className="pc-topbar">
         <div className="pc-topbar-brand">
-          <span className="mark">P</span>
-          <span>Pedestal Calc</span>
-          <span className="pc-chip pc-mono">v2.1</span>
+          <img src={enmonLogo} alt="ENMON" className="pc-topbar-logo" />
         </div>
 
         <div className="pc-topbar-steps" data-tour="topbar-modes">
@@ -416,17 +413,25 @@ const PedestalCalculatorMain = () => {
 
         <div className="pc-topbar-spacer" />
 
+        <button
+          className="pc-btn ghost"
+          type="button"
+          onClick={() => setLanguage(language === 'zh' ? 'en' : 'zh')}
+          title={t('header.language')}
+        >
+          {language === 'zh' ? '中文' : 'EN'}
+        </button>
         <button className="pc-btn ghost" type="button" onClick={() => setShowInstructions(true)}>
-          Help
+          {t('common.help')}
         </button>
         <button className="pc-btn accent" type="button" onClick={() => setAiImportVisible(true)}>
-          AI Import
+          {t('calculator.aiImport')}
         </button>
         <button className="pc-btn" type="button" onClick={handleSaveCurrentProject}>
-          Save
+          {t('common.save')}
         </button>
         <button className="pc-btn ghost" type="button" onClick={handleSignOut}>
-          Sign Out
+          {t('header.signOut')}
         </button>
       </header>
 
@@ -434,8 +439,7 @@ const PedestalCalculatorMain = () => {
         <div className="pc-alert-stack">
           {!isConfigured && (
             <div className="pc-auth-alert warn" style={{ marginBottom: 8 }}>
-              Supabase is not configured yet. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
-              to your env file to enable auth and project persistence.
+              {t('calculator.supabaseMissing')}
             </div>
           )}
           {projectError && (
@@ -445,9 +449,9 @@ const PedestalCalculatorMain = () => {
           )}
           {projectNotice && (
             <div className="pc-auth-alert ok">
-              {projectNotice}
-            </div>
-          )}
+            {projectNotice}
+          </div>
+        )}
         </div>
       )}
 
@@ -530,6 +534,11 @@ const PedestalCalculatorMain = () => {
                 projectName={activeProjectName}
                 userEmail={user?.email}
                 metrics={metrics}
+                gridSize={gridSize}
+                zoom={zoom}
+                setZoom={setSmoothZoom}
+                panOffset={panOffset}
+                setPanOffset={setPanOffset}
               />
             )}
           </div>
@@ -560,7 +569,7 @@ const PedestalCalculatorMain = () => {
         <ModalFooter>
           <div style={{ flex: 1 }} />
           <button className="pc-btn primary" type="button" onClick={() => setShowInstructions(false)}>
-            Got it
+            {t('common.gotIt')}
           </button>
         </ModalFooter>
       </Modal>
@@ -580,13 +589,13 @@ const PedestalCalculatorMain = () => {
             setSaveAsMode(false)
           }}
         >
-          <h5 style={{ margin: 0 }}>{saveAsMode ? 'Save Project As' : 'Save Project'}</h5>
+          <h5 style={{ margin: 0 }}>{saveAsMode ? t('projects.saveProjectAs') : t('projects.saveProject')}</h5>
         </ModalHeader>
         <ModalBody style={{ padding: '20px' }}>
           <input
             className="pc-project-input"
             style={{ width: '100%', boxSizing: 'border-box' }}
-            placeholder="Project name"
+            placeholder={t('common.projectName')}
             value={projectNameInput}
             onChange={(event) => setProjectNameInput(event.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleSaveProject(undefined, saveAsMode) }}
@@ -603,7 +612,7 @@ const PedestalCalculatorMain = () => {
               setSaveAsMode(false)
             }}
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             className="pc-btn primary"
@@ -611,7 +620,7 @@ const PedestalCalculatorMain = () => {
             onClick={() => handleSaveProject(undefined, saveAsMode)}
             disabled={projectSubmitting}
           >
-            Save
+            {t('common.save')}
           </button>
         </ModalFooter>
       </Modal>
@@ -647,8 +656,9 @@ const ProjectRail = ({
   onNewProject,
   onShowInstructions,
 }) => {
+  const { t } = useLanguage()
   const finishRename = () => {
-    const name = projectNameInput.trim() || 'Untitled Project'
+    const name = projectNameInput.trim() || t('projects.untitled')
     setActiveProjectName(name)
     setProjectNameInput(name)
     setEditingProjectName(false)
@@ -657,7 +667,7 @@ const ProjectRail = ({
   return (
     <aside className="pc-rail">
       <div className="pc-rail-section">
-        <div className="pc-rail-label">Project</div>
+        <div className="pc-rail-label">{t('projects.project')}</div>
         {editingProjectName ? (
           <input
             autoFocus
@@ -678,61 +688,61 @@ const ProjectRail = ({
             <button
               className="pc-btn ghost"
               type="button"
-              title="Rename project"
+              title={t('projects.renameProject')}
               onClick={() => {
                 setProjectNameInput(activeProjectName)
                 setEditingProjectName(true)
               }}
             >
-              Edit
+              {t('common.edit')}
             </button>
           </div>
         )}
         <div style={{ color: 'var(--pc-ink-3)', fontSize: 12, marginTop: 4 }}>
-          {user?.email || 'Local draft'}
+          {user?.email || t('common.localDraft')}
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
-          <span className="pc-chip pc-mono">Grid {metrics.gridScale}</span>
-          <span className="pc-chip">{activeProjectId ? 'Saved' : 'Draft'}</span>
+          <span className="pc-chip pc-mono">{t('projects.grid')} {metrics.gridScale}</span>
+          <span className="pc-chip">{activeProjectId ? t('common.saved') : t('common.draft')}</span>
         </div>
       </div>
 
       <div className="pc-rail-section">
-        <div className="pc-rail-label">Actions</div>
+        <div className="pc-rail-label">{t('projects.actions')}</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
           <button className="pc-btn primary" type="button" onClick={onSave}>
-            Save
+            {t('common.save')}
           </button>
           <button className="pc-btn" type="button" onClick={onSaveAs}>
-            Save As
+            {t('common.saveAs')}
           </button>
           <button className="pc-btn" type="button" onClick={onNewProject}>
-            New
+            {t('common.new')}
           </button>
           <button className="pc-btn" type="button" onClick={onShowInstructions}>
-            Help
+            {t('common.help')}
           </button>
         </div>
       </div>
 
       <div className="pc-rail-section">
-        <div className="pc-rail-label">Overview</div>
+        <div className="pc-rail-label">{t('projects.overview')}</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-          <RailStat label="Shapes" value={metrics.shapeCount} />
-          <RailStat label="Vertices" value={metrics.vertexCount} />
-          <RailStat label="Area" value={`${metrics.area} ${metrics.areaUnit}`} />
-          <RailStat label="Perimeter" value={`${metrics.perimeter} ${metrics.lengthUnit}`} />
+          <RailStat label={t('projects.shapes')} value={metrics.shapeCount} />
+          <RailStat label={t('projects.vertices')} value={metrics.vertexCount} />
+          <RailStat label={t('projects.area')} value={`${metrics.area} ${metrics.areaUnit}`} />
+          <RailStat label={t('projects.perimeter')} value={`${metrics.perimeter} ${metrics.lengthUnit}`} />
         </div>
       </div>
 
       <div className="pc-rail-section">
-        <div className="pc-rail-label">Saved Projects</div>
+        <div className="pc-rail-label">{t('projects.savedProjects')}</div>
         {projectsLoading && (
-          <div style={{ color: 'var(--pc-ink-3)', fontSize: 12 }}>Loading projects...</div>
+          <div style={{ color: 'var(--pc-ink-3)', fontSize: 12 }}>{t('projects.loadingProjects')}</div>
         )}
         {!projectsLoading && projects.length === 0 && (
           <div style={{ color: 'var(--pc-ink-3)', fontSize: 12, lineHeight: 1.5 }}>
-            Save this project to see it here.
+            {t('projects.saveThisProject')}
           </div>
         )}
         {!projectsLoading && projects.length > 0 && (
@@ -762,7 +772,7 @@ const ProjectRail = ({
                     disabled={projectSubmitting}
                     onClick={() => onLoadProject(project.id)}
                   >
-                    Load
+                    {t('common.load')}
                   </button>
                   <button
                     type="button"
@@ -771,7 +781,7 @@ const ProjectRail = ({
                     disabled={projectSubmitting}
                     onClick={() => onDeleteProject(project.id)}
                   >
-                    Delete
+                    {t('common.delete')}
                   </button>
                 </div>
               </div>
@@ -802,28 +812,32 @@ const RailStat = ({ label, value }) => (
   </div>
 )
 
-const MetricsDock = ({ metrics, step, totalSteps, isAnimating, onBack, onNext, onPrint }) => (
-  <div className="pc-metrics-dock" data-tour="metrics">
-    <MetricItem label="Area" value={metrics.area} unit={metrics.areaUnit} />
-    <MetricItem label="Perimeter" value={metrics.perimeter} unit={metrics.lengthUnit} />
-    <MetricItem label="Pedestals" value={metrics.pedestals} unit="pcs" />
-    <MetricItem label="Tiles" value={metrics.tiles} unit="pcs" />
-    <MetricItem label="Avg Height" value={metrics.averageHeight} unit={metrics.heightUnit} />
-    <div style={{ flex: 1 }} />
-    <button className="pc-btn" type="button" onClick={onBack} disabled={step === 1 || isAnimating}>
-      Previous
-    </button>
-    {step === totalSteps ? (
-      <button className="pc-btn primary" type="button" onClick={onPrint} disabled={isAnimating}>
-        Print Invoice
+const MetricsDock = ({ metrics, step, totalSteps, isAnimating, onBack, onNext, onPrint }) => {
+  const { t } = useLanguage()
+
+  return (
+    <div className="pc-metrics-dock" data-tour="metrics">
+      <MetricItem label={t('projects.area')} value={metrics.area} unit={metrics.areaUnit} />
+      <MetricItem label={t('projects.perimeter')} value={metrics.perimeter} unit={metrics.lengthUnit} />
+      <MetricItem label={t('calculator.pedestals')} value={metrics.pedestals} unit="pcs" />
+      <MetricItem label={t('calculator.tiles')} value={metrics.tiles} unit="pcs" />
+      <MetricItem label={t('calculator.avgHeight')} value={metrics.averageHeight} unit={metrics.heightUnit} />
+      <div style={{ flex: 1 }} />
+      <button className="pc-btn" type="button" onClick={onBack} disabled={step === 1 || isAnimating}>
+        {t('common.previous')}
       </button>
-    ) : (
-      <button className="pc-btn primary" type="button" onClick={onNext} disabled={isAnimating}>
-        Next
-      </button>
-    )}
-  </div>
-)
+      {step === totalSteps ? (
+        <button className="pc-btn primary" type="button" onClick={onPrint} disabled={isAnimating}>
+          {t('calculator.printInvoice')}
+        </button>
+      ) : (
+        <button className="pc-btn primary" type="button" onClick={onNext} disabled={isAnimating}>
+          {t('common.next')}
+        </button>
+      )}
+    </div>
+  )
+}
 
 const MetricItem = ({ label, value, unit, accent }) => (
   <div className={`metric${accent ? ' accent' : ''}`}>

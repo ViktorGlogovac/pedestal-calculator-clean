@@ -1,5 +1,6 @@
 import React from 'react'
 import PropTypes from 'prop-types'
+import { useLanguage } from '../../../context/LanguageContext'
 
 export const TILE_TYPES = [
   { id: 'tile16-16', name: 'Tile 16x16 in', width: 40.64, height: 40.64 },
@@ -25,6 +26,7 @@ function TileOptionsPanel({
   setOrientation,
   onShowInstructions,
 }) {
+  const { t } = useLanguage()
   const isOffsetEnabled =
     selectedTileType.id === 'tile60-120' || selectedTileType.id === 'tile30-120'
   const isThirdOffsetEnabled = selectedTileType.id === 'tile30-120'
@@ -60,12 +62,12 @@ function TileOptionsPanel({
             onClick={onShowInstructions}
             style={{ width: '100%', justifyContent: 'center' }}
           >
-            Step Instructions
+            {t('calculator.stepInstructions')}
           </button>
         </PanelSection>
       )}
 
-      <PanelSection title="Tile Size">
+      <PanelSection title={t('calculator.tileSize')}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {TILE_TYPES.map((tile) => {
             const tileDims = getTileDimensions(tile)
@@ -100,7 +102,7 @@ function TileOptionsPanel({
         </div>
       </PanelSection>
 
-      <PanelSection title="Orientation">
+      <PanelSection title={t('calculator.orientation')}>
         <div className="pc-seg" style={{ width: '100%' }}>
           <button
             type="button"
@@ -108,7 +110,7 @@ function TileOptionsPanel({
             onClick={() => setOrientation('landscape')}
             style={{ flex: 1 }}
           >
-            Landscape
+            {t('calculator.landscape')}
           </button>
           <button
             type="button"
@@ -116,12 +118,12 @@ function TileOptionsPanel({
             onClick={() => setOrientation('portrait')}
             style={{ flex: 1 }}
           >
-            Portrait
+            {t('calculator.portrait')}
           </button>
         </div>
       </PanelSection>
 
-      <PanelSection title="Pattern">
+      <PanelSection title={t('calculator.pattern')}>
         <div className="pc-seg" style={{ width: '100%' }}>
           <button
             type="button"
@@ -129,7 +131,7 @@ function TileOptionsPanel({
             onClick={() => setIsOffset(false)}
             style={{ flex: 1 }}
           >
-            Stacked
+            {t('calculator.stacked')}
           </button>
           <button
             type="button"
@@ -152,27 +154,27 @@ function TileOptionsPanel({
         </div>
       </PanelSection>
 
-      <PanelSection title="Canvas">
+      <PanelSection title={t('calculator.canvas')}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
           <button className="pc-btn" type="button" onClick={onZoomIn}>
-            Zoom In
+            {t('calculator.zoomIn')}
           </button>
           <button className="pc-btn" type="button" onClick={onZoomOut}>
-            Zoom Out
+            {t('calculator.zoomOut')}
           </button>
         </div>
       </PanelSection>
 
       {typeof showRedPedestals === 'boolean' && setShowRedPedestals && (
-        <PanelSection title="Pedestals">
+        <PanelSection title={t('calculator.pedestals')}>
           <button
             className="pc-btn"
             type="button"
             onClick={() => setShowRedPedestals(!showRedPedestals)}
             style={{ width: '100%', justifyContent: 'space-between' }}
           >
-            <span>Calculated pedestals</span>
-            <span className="pc-chip">{showRedPedestals ? 'Visible' : 'Hidden'}</span>
+            <span>{t('calculator.calculatedPedestals')}</span>
+            <span className="pc-chip">{showRedPedestals ? t('calculator.visible') : t('calculator.hidden')}</span>
           </button>
         </PanelSection>
       )}

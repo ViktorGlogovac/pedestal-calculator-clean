@@ -1,9 +1,11 @@
 import React, { useRef, useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
+import { useLanguage } from '../../context/LanguageContext'
 import avatar8 from './../../assets/images/avatars/8.jpg'
 
 const AppHeaderDropdown = () => {
   const { user, signOut } = useAuth()
+  const { t } = useLanguage()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -31,7 +33,7 @@ const AppHeaderDropdown = () => {
       >
         <img
           src={avatar8}
-          alt="User"
+          alt={user?.email || 'User'}
           style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }}
         />
       </button>
@@ -84,7 +86,7 @@ const AppHeaderDropdown = () => {
               color: 'var(--pc-ink-2, #333)',
             }}
           >
-            Sign Out
+            {t('header.signOut')}
           </button>
         </div>
       )}
