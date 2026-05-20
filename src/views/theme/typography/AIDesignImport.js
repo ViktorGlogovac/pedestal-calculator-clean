@@ -10,8 +10,14 @@ const STAGES = [
 ]
 
 const BACKEND_BASE = 'http://localhost:3001'
+const IMPORT_STEPS = [
+  { id: 'units', label: 'Units' },
+  { id: 'plan', label: 'Deck Plan' },
+  { id: 'depth', label: 'Depths' },
+]
 
 const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem = 'metric' }) => {
+  const [activeStep, setActiveStep] = useState(0)
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
   const [depthImageFile, setDepthImageFile] = useState(null)
@@ -49,6 +55,7 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
     setIsAnalyzing(false)
     setCurrentStage(-1)
     setCompletedStages([])
+    setActiveStep(0)
     onClose()
   }
 
@@ -173,6 +180,11 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
     if (relativePath.startsWith('http')) return relativePath
     return `${BACKEND_BASE}${relativePath}`
   }
+  const isLastStep = activeStep === IMPORT_STEPS.length - 1
+  const canGoNext = activeStep < IMPORT_STEPS.length - 1
+  const nextDisabled = isAnalyzing || (activeStep === 1 && !imageFile)
+  const goNext = () => setActiveStep((step) => Math.min(IMPORT_STEPS.length - 1, step + 1))
+  const goBack = () => setActiveStep((step) => Math.max(0, step - 1))
 
   return (
     <Modal
@@ -199,60 +211,95 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
         <div className="pc-ai-shell">
           <div className="pc-ai-main">
             <div style={{ display: 'grid', gap: 14 }}>
-              <ExampleSketchGuide />
+              <ImportStepper activeStep={activeStep} steps={IMPORT_STEPS} />
 
-              <UnitSelector
-                value={sketchUnitSystem}
-                onChange={setSketchUnitSystem}
-                disabled={isAnalyzing}
-              />
+              {activeStep === 0 && (
+                <StepPanel
+                  eyebrow="Step 1"
+                  title="Choose the units used in your sketch"
+                  description="Pick the unit system that matches the handwritten dimensions. The AI will use this to scale the canvas."
+                >
+                  <UnitSelector
+                    value={sketchUnitSystem}
+                    onChange={setSketchUnitSystem}
+                    disabled={isAnalyzing}
+                  />
+                </StepPanel>
+              )}
 
-              <DropZone
-                label="Deck plan"
-                required
-                accentColor="var(--pc-accent)"
-                emptyTitle="Drop your deck plan here"
-                emptyHint="or click to browse - PNG, JPG, WEBP, screenshot"
-                imagePreview={imagePreview}
-                fileName={imageFile?.name}
-                inputRef={fileInputRef}
-                disabled={isAnalyzing}
-                dragActive={isDraggingOver}
-                onFileChange={handleFileChange}
-                onDrop={handleDrop}
-                onDragOver={(event) => {
-                  event.preventDefault()
-                  setIsDraggingOver(true)
-                }}
-                onDragLeave={() => setIsDraggingOver(false)}
-                onReplace={() => fileInputRef.current?.click()}
-                big
-              />
+              {activeStep === 1 && (
+                <StepPanel
+                  eyebrow="Step 2"
+                  title="Upload the deck outline"
+                  description="Use a clear photo like the example: one closed outside shape with readable edge dimensions."
+                >
+                  <ExampleSketchInline
+                    title="Deck plan example"
+                    description="Draw the perimeter as one closed outline. Put edge lengths next to the matching sides."
+                    variant="plan"
+                  />
+                  <DropZone
+                    label="Deck plan"
+                    required
+                    accentColor="var(--pc-accent)"
+                    emptyTitle="Drop your deck plan here"
+                    emptyHint="or click to browse - PNG, JPG, WEBP, screenshot"
+                    imagePreview={imagePreview}
+                    fileName={imageFile?.name}
+                    inputRef={fileInputRef}
+                    disabled={isAnalyzing}
+                    dragActive={isDraggingOver}
+                    onFileChange={handleFileChange}
+                    onDrop={handleDrop}
+                    onDragOver={(event) => {
+                      event.preventDefault()
+                      setIsDraggingOver(true)
+                    }}
+                    onDragLeave={() => setIsDraggingOver(false)}
+                    onReplace={() => fileInputRef.current?.click()}
+                    big
+                  />
+                  <Tips />
+                </StepPanel>
+              )}
 
-              <DropZone
-                label="Pedestal depths sketch"
-                optionalText="optional second image with mm values written on the shape"
-                accentColor="oklch(55% 0.18 290)"
-                emptyTitle="Drop depth annotation photo here"
-                emptyHint="Pedestal heights, spot levels, or handwritten depth values"
-                imagePreview={depthImagePreview}
-                fileName={depthImageFile?.name}
-                inputRef={depthFileInputRef}
-                disabled={isAnalyzing}
-                dragActive={isDepthDraggingOver}
-                onFileChange={handleDepthFileChange}
-                onDrop={handleDepthDrop}
-                onDragOver={(event) => {
-                  event.preventDefault()
-                  setIsDepthDraggingOver(true)
-                }}
-                onDragLeave={() => setIsDepthDraggingOver(false)}
-                onReplace={() => depthFileInputRef.current?.click()}
-                onRemove={() => {
-                  setDepthImageFile(null)
-                  setDepthImagePreview(null)
-                }}
-              />
+              {activeStep === 2 && (
+                <StepPanel
+                  eyebrow="Step 3"
+                  title="Add optional pedestal heights, then analyze"
+                  description="If you have spot heights or pedestal depths, upload a second sketch. Otherwise leave this blank and run the import."
+                >
+                  <ExampleSketchInline
+                    title="Depth sketch example"
+                    description="Use a second sketch only when you have spot heights or pedestal depths to include."
+                    variant="depth"
+                  />
+                  <DropZone
+                    label="Pedestal depths sketch"
+                    optionalText="optional second image with mm/in values written on the shape"
+                    accentColor="oklch(55% 0.18 290)"
+                    emptyTitle="Drop depth annotation photo here"
+                    emptyHint="Pedestal heights, spot levels, or handwritten depth values"
+                    imagePreview={depthImagePreview}
+                    fileName={depthImageFile?.name}
+                    inputRef={depthFileInputRef}
+                    disabled={isAnalyzing}
+                    dragActive={isDepthDraggingOver}
+                    onFileChange={handleDepthFileChange}
+                    onDrop={handleDepthDrop}
+                    onDragOver={(event) => {
+                      event.preventDefault()
+                      setIsDepthDraggingOver(true)
+                    }}
+                    onDragLeave={() => setIsDepthDraggingOver(false)}
+                    onReplace={() => depthFileInputRef.current?.click()}
+                    onRemove={() => {
+                      setDepthImageFile(null)
+                      setDepthImagePreview(null)
+                    }}
+                  />
+                </StepPanel>
+              )}
 
               {isAnalyzing && (
                 <StageProgress
@@ -266,7 +313,6 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
 
               {result && !isAnalyzing && <ResultDetails result={result} />}
 
-              {!imagePreview && !isAnalyzing && <Tips />}
             </div>
           </div>
 
@@ -302,12 +348,22 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
           Cancel
         </button>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          {imageFile && (
+          {activeStep > 0 && (
+            <button className="pc-btn" type="button" onClick={goBack} disabled={isAnalyzing}>
+              Back
+            </button>
+          )}
+          {canGoNext && (
+            <button className="pc-btn primary lg" type="button" onClick={goNext} disabled={nextDisabled}>
+              Next
+            </button>
+          )}
+          {isLastStep && (
             <button
               className="pc-btn accent lg"
               type="button"
               onClick={handleAnalyze}
-              disabled={isAnalyzing}
+              disabled={isAnalyzing || !imageFile}
               style={{ minWidth: 158, justifyContent: 'center' }}
             >
               {isAnalyzing ? (
@@ -489,6 +545,84 @@ const DropZone = ({
   </section>
 )
 
+const ImportStepper = ({ steps, activeStep }) => (
+  <nav
+    aria-label="AI import steps"
+    style={{
+      display: 'grid',
+      gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))`,
+      gap: 8,
+    }}
+  >
+    {steps.map((step, index) => {
+      const isActive = index === activeStep
+      const isDone = index < activeStep
+      return (
+        <div
+          key={step.id}
+          style={{
+            padding: '9px 10px',
+            borderRadius: 10,
+            border: `1px solid ${isActive ? 'var(--pc-accent)' : 'var(--pc-line)'}`,
+            background: isActive ? 'var(--pc-accent-soft)' : isDone ? 'oklch(97% 0.04 150)' : 'var(--pc-surface)',
+            color: isActive ? 'var(--pc-accent-ink)' : 'var(--pc-ink-3)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            minWidth: 0,
+          }}
+        >
+          <span
+            style={{
+              width: 22,
+              height: 22,
+              borderRadius: 999,
+              display: 'grid',
+              placeItems: 'center',
+              background: isActive ? 'var(--pc-accent)' : isDone ? 'var(--pc-ok)' : 'var(--pc-line-2)',
+              color: '#fff',
+              fontSize: 11,
+              fontWeight: 800,
+              flexShrink: 0,
+            }}
+          >
+            {isDone ? '✓' : index + 1}
+          </span>
+          <span style={{ fontSize: 12, fontWeight: isActive ? 750 : 650, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {step.label}
+          </span>
+        </div>
+      )
+    })}
+  </nav>
+)
+
+const StepPanel = ({ eyebrow, title, description, children }) => (
+  <section
+    style={{
+      padding: 16,
+      borderRadius: 14,
+      border: '1px solid var(--pc-line)',
+      background: 'var(--pc-surface)',
+      display: 'grid',
+      gap: 14,
+    }}
+  >
+    <div>
+      <div className="pc-rail-label" style={{ marginBottom: 4 }}>
+        {eyebrow}
+      </div>
+      <h3 style={{ margin: 0, color: 'var(--pc-ink)', fontSize: 18, fontWeight: 780 }}>
+        {title}
+      </h3>
+      <p style={{ margin: '6px 0 0', color: 'var(--pc-ink-3)', fontSize: 13, lineHeight: 1.5 }}>
+        {description}
+      </p>
+    </div>
+    {children}
+  </section>
+)
+
 const UnitSelector = ({ value, onChange, disabled }) => (
   <section>
     <div style={{ marginBottom: 7 }}>
@@ -578,11 +712,56 @@ const ExampleSketchGuide = () => (
   </section>
 )
 
+const ExampleSketchInline = ({ title, description, variant }) => (
+  <section
+    className="pc-ai-example-guide"
+    style={{
+      padding: 12,
+      borderRadius: 14,
+      border: '1px solid var(--pc-line)',
+      background: 'linear-gradient(135deg, #fff 0%, oklch(98% 0.02 240) 100%)',
+      display: 'grid',
+      gap: 10,
+    }}
+  >
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+      <div>
+        <div className="pc-rail-label" style={{ marginBottom: 4 }}>
+          Example
+        </div>
+        <div style={{ fontSize: 14, fontWeight: 750, color: 'var(--pc-ink)' }}>{title}</div>
+        <div style={{ fontSize: 12, color: 'var(--pc-ink-3)', lineHeight: 1.45, marginTop: 2 }}>
+          {description}
+        </div>
+      </div>
+      <span
+        style={{
+          alignSelf: 'flex-start',
+          padding: '4px 8px',
+          borderRadius: 999,
+          background: 'var(--pc-accent-soft)',
+          color: 'var(--pc-accent-ink)',
+          fontSize: 11,
+          fontWeight: 700,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        Animated
+      </span>
+    </div>
+    <ExampleSketchCard
+      title={variant === 'plan' ? 'Deck plan image' : 'Depth image, optional'}
+      subtitle={variant === 'plan' ? 'Use feet/meters for edge lengths.' : 'Use inch/mm spot heights if you have them.'}
+      variant={variant}
+    />
+  </section>
+)
+
 const ExampleSketchCard = ({ title, subtitle, variant }) => {
   const isDepth = variant === 'depth'
   const path = isDepth
-    ? 'M38 18 H210 V70 H138 V190 H215 V242 H38 Z'
-    : 'M30 18 H218 V78 H148 V190 H225 V242 H30 Z'
+    ? 'M38 18 H210 V70 H138 V190 H215 V242 H38 L38 18'
+    : 'M30 18 H218 V78 H148 V190 H225 V242 H30 L30 18'
   const labels = isDepth
     ? [
         ['4"', 45, 38],
@@ -625,7 +804,13 @@ const ExampleSketchCard = ({ title, subtitle, variant }) => {
         viewBox="0 0 256 270"
         role="img"
         aria-label={title}
-        style={{ display: 'block', width: '100%', height: 210, background: '#fbfdff' }}
+        style={{
+          '--pc-ai-example-duration': isDepth ? '20s' : '12s',
+          display: 'block',
+          width: '100%',
+          height: 210,
+          background: '#fbfdff',
+        }}
       >
         {Array.from({ length: 12 }).map((_, index) => (
           <line
@@ -639,9 +824,19 @@ const ExampleSketchCard = ({ title, subtitle, variant }) => {
           />
         ))}
         <path
+          d={path}
+          fill="rgba(37, 99, 235, 0.035)"
+          stroke="#292929"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity="0.28"
+        />
+        <path
           className="pc-ai-example-outline"
           d={path}
-          fill="rgba(37, 99, 235, 0.04)"
+          pathLength="100"
+          fill="none"
           stroke="#292929"
           strokeWidth="2.4"
           strokeLinecap="round"
@@ -653,13 +848,18 @@ const ExampleSketchCard = ({ title, subtitle, variant }) => {
             className="pc-ai-example-label"
             x={x}
             y={y}
-            style={{ animationDelay: `${0.45 + index * 0.09}s` }}
+            style={{ animationDelay: `${isDepth ? 3.4 + index * 0.46 : 2.2 + index * 0.34}s` }}
             textAnchor="middle"
           >
             {label}
           </text>
         ))}
-        <circle className="pc-ai-example-pen" r="4" fill="var(--pc-accent)" />
+        <circle
+          className="pc-ai-example-pen"
+          r="4"
+          fill="var(--pc-accent)"
+          style={{ offsetPath: `path("${path}")`, offsetRotate: '0deg' }}
+        />
       </svg>
     </div>
   )
@@ -1128,9 +1328,9 @@ const spinnerStyle = {
 
 const exampleGuideStyles = `
   .pc-ai-example-outline {
-    stroke-dasharray: 740;
-    stroke-dashoffset: 740;
-    animation: pc-ai-draw-outline 2.4s ease-in-out infinite;
+    stroke-dasharray: 100;
+    stroke-dashoffset: 100;
+    animation: pc-ai-draw-outline var(--pc-ai-example-duration, 12s) ease-in-out infinite;
   }
 
   .pc-ai-example-label {
@@ -1141,38 +1341,31 @@ const exampleGuideStyles = `
     opacity: 0;
     transform-box: fill-box;
     transform-origin: center;
-    animation: pc-ai-write-label 2.4s ease-in-out infinite;
+    animation: pc-ai-write-label var(--pc-ai-example-duration, 12s) ease-in-out infinite;
   }
 
   .pc-ai-example-pen {
-    offset-path: path("M30 18 H218 V78 H148 V190 H225 V242 H30 Z");
-    animation: pc-ai-pen-path 2.4s ease-in-out infinite;
+    animation: pc-ai-pen-path var(--pc-ai-example-duration, 12s) ease-in-out infinite;
     opacity: 0;
   }
 
-  .pc-ai-example-guide:hover .pc-ai-example-outline,
-  .pc-ai-example-guide:hover .pc-ai-example-label,
-  .pc-ai-example-guide:hover .pc-ai-example-pen {
-    animation-duration: 1.6s;
-  }
-
   @keyframes pc-ai-draw-outline {
-    0% { stroke-dashoffset: 740; }
-    45%, 82% { stroke-dashoffset: 0; }
-    100% { stroke-dashoffset: 740; }
+    0% { stroke-dashoffset: 100; }
+    72%, 92% { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: 100; }
   }
 
   @keyframes pc-ai-write-label {
-    0%, 28% { opacity: 0; transform: translateY(4px) rotate(-2deg) scale(0.96); }
-    42%, 82% { opacity: 1; transform: translateY(0) rotate(-2deg) scale(1); }
+    0%, 52% { opacity: 0; transform: translateY(4px) rotate(-2deg) scale(0.96); }
+    68%, 92% { opacity: 1; transform: translateY(0) rotate(-2deg) scale(1); }
     100% { opacity: 0; transform: translateY(-2px) rotate(-2deg) scale(0.98); }
   }
 
   @keyframes pc-ai-pen-path {
     0% { offset-distance: 0%; opacity: 0; }
-    10% { opacity: 1; }
-    45% { offset-distance: 100%; opacity: 1; }
-    54%, 100% { offset-distance: 100%; opacity: 0; }
+    8% { opacity: 1; }
+    72% { offset-distance: 100%; opacity: 1; }
+    80%, 100% { offset-distance: 100%; opacity: 0; }
   }
 `
 
@@ -1197,6 +1390,23 @@ DropZone.propTypes = {
   big: PropTypes.bool,
 }
 
+ImportStepper.propTypes = {
+  steps: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.string.isRequired,
+      label: PropTypes.string.isRequired,
+    }),
+  ).isRequired,
+  activeStep: PropTypes.number.isRequired,
+}
+
+StepPanel.propTypes = {
+  eyebrow: PropTypes.string.isRequired,
+  title: PropTypes.string.isRequired,
+  description: PropTypes.string.isRequired,
+  children: PropTypes.node.isRequired,
+}
+
 UnitSelector.propTypes = {
   value: PropTypes.oneOf(['metric', 'imperial']).isRequired,
   onChange: PropTypes.func.isRequired,
@@ -1206,6 +1416,12 @@ UnitSelector.propTypes = {
 ExampleSketchCard.propTypes = {
   title: PropTypes.string.isRequired,
   subtitle: PropTypes.string.isRequired,
+  variant: PropTypes.oneOf(['plan', 'depth']).isRequired,
+}
+
+ExampleSketchInline.propTypes = {
+  title: PropTypes.string.isRequired,
+  description: PropTypes.string.isRequired,
   variant: PropTypes.oneOf(['plan', 'depth']).isRequired,
 }
 

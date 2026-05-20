@@ -1,6 +1,7 @@
 import React from 'react'
 import PropTypes from 'prop-types'
 import { useLanguage } from '../../../context/LanguageContext'
+import enmonLogo from '../../../assets/brand/enmon-logo.svg'
 
 // ─── Tile deck geometry ───────────────────────────────────────────────────────
 const COLS = 6
@@ -107,8 +108,7 @@ const AuthShell = ({ children }) => {
     <div className="pc-root pc-auth">
       <section className="pc-auth-hero">
         <div className="pc-auth-logo">
-          <span className="pc-auth-logo-mark">P</span>
-          <span>{t('calculator.brand')}</span>
+          <img src={enmonLogo} alt="ENMON" className="pc-auth-logo-img" />
         </div>
 
         <div>

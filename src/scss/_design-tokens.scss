@@ -354,6 +354,14 @@
     gap: 10px;
     font-weight: 600;
     font-size: 15px;
+    .pc-auth-logo-img {
+      display: block;
+      width: 118px;
+      height: auto;
+      background: rgba(245, 244, 239, 0.96);
+      border-radius: 10px;
+      padding: 8px 10px;
+    }
     .pc-auth-logo-mark {
       width: 30px;
       height: 30px;
