@@ -50,7 +50,9 @@ async function analyzeSketch(imageFile, depthImageFile = null, unitSystem = 'met
 
   let response
   const controller = new AbortController()
-  const timeoutId = window.setTimeout(() => controller.abort(), 100000)
+  // Match the Cloud Run request timeout (600s). The backend runs two Codex calls
+  // of up to 180s each, so the browser must not abort before the server can finish.
+  const timeoutId = window.setTimeout(() => controller.abort(), 600000)
   try {
     response = await fetch(`${BACKEND_BASE}/analyze`, {
       method: 'POST',

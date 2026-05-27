@@ -365,6 +365,35 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
       }
     })
 
+    // Ensure a pedestal at every deck corner (polygon vertex) so heights written
+    // at corners attach to an actual corner pedestal instead of snapping to the
+    // nearest interior grid pedestal.
+    ;(mainPoly || []).forEach((vertex) => {
+      const vx = Array.isArray(vertex) ? vertex[0] : vertex?.x
+      const vy = Array.isArray(vertex) ? vertex[1] : vertex?.y
+      if (!Number.isFinite(vx) || !Number.isFinite(vy)) return
+      const key = `${vx},${vy}`
+      if (pedestalPositions.has(key)) return
+
+      let height
+      const adjP = adjustedPedestals.find((p) => p.x === vx && p.y === vy)
+      if (adjP) {
+        height = adjP.height
+      } else {
+        const tri = findContainingTriangle({ x: vx, y: vy }, triangles)
+        if (tri) {
+          const { l0, l1, l2 } = barycentricCoordinates(vx, vy, ...tri)
+          height = l0 * tri[0].height + l1 * tri[1].height + l2 * tri[2].height
+        } else {
+          const nearestIndex = delaunay.find(vx, vy)
+          height = controlPoints[nearestIndex].height
+        }
+      }
+
+      newPedestals.push({ x: vx, y: vy, height })
+      pedestalPositions.add(key)
+    })
+
     const normalizedPedestals = dedupeAndSnapPedestals(newPedestals, mainPoly)
 
     setTiles(newTiles)

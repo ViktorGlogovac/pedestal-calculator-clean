@@ -553,6 +553,30 @@ const TileLayout = ({
       })
     }
 
+    // Tile clipping does not always create a vertex pedestal at every deck
+    // corner. Add those explicitly so AI height anchors at known polygon
+    // vertices have an exact pedestal to attach to.
+    layoutPolygons.forEach((polygon) => {
+      polygon.forEach(([vx, vy]) => {
+        if (!Number.isFinite(vx) || !Number.isFinite(vy)) return
+        const key = `${vx},${vy}`
+        if (pedestalPositions.has(key)) return
+
+        let height
+        const tri = findContainingTriangle({ x: vx, y: vy }, triangles)
+        if (tri) {
+          const { l0, l1, l2 } = barycentricCoordinates(vx, vy, ...tri)
+          height = l0 * tri[0].height + l1 * tri[1].height + l2 * tri[2].height
+        } else {
+          const nearestIndex = delaunay.find(vx, vy)
+          height = controlPoints[nearestIndex].height
+        }
+
+        newPedestals.push({ x: vx, y: vy, height })
+        pedestalPositions.add(key)
+      })
+    })
+
     setTiles(newTiles)
 
     // Merge close pedestals (within 60cm) except for tile corners

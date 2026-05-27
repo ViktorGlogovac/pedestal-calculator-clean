@@ -141,7 +141,9 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
       setCompletedStages([])
       setIsAnalyzing(false)
       setError('Analysis timed out. Check that the backend server and Codex CLI are running, then try again.')
-    }, 110000)
+      // Last-resort net: must exceed the fetch abort (600s) so analyzeSketch's own
+      // timeout handling fires first with a more specific message.
+    }, 620000)
 
     try {
       const apiResult = await analyzeSketch(imageFile, depthImageFile || null, sketchUnitSystem)

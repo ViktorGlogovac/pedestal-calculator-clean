@@ -3,7 +3,7 @@ const os = require('os')
 const path = require('path')
 const { spawn, spawnSync } = require('child_process')
 
-const DEFAULT_TIMEOUT_MS = 90000
+const DEFAULT_TIMEOUT_MS = 180000
 let didAttemptLogin = false
 
 function resolveOpenAiApiKey() {
@@ -62,6 +62,10 @@ function callCodexCli({ prompt, imagePath = null, outputSchema = null, timeoutMs
 
     const codexBin = process.env.CODEX_CLI_PATH || 'codex'
     const model = process.env.CODEX_SKETCH_MODEL || process.env.OPENAI_SKETCH_MODEL || process.env.OPENAI_MODEL
+    // gpt-5 is a reasoning model; without a cap it reasons for minutes on complex
+    // sketches. Default to "low" effort for speed; tune via CODEX_REASONING_EFFORT
+    // (minimal | low | medium | high) without a redeploy. Set to "" to disable.
+    const reasoningEffort = process.env.CODEX_REASONING_EFFORT ?? 'low'
     const args = [
       'exec',
       '--color', 'never',
@@ -71,6 +75,7 @@ function callCodexCli({ prompt, imagePath = null, outputSchema = null, timeoutMs
       '-o', outputPath,
     ]
 
+    if (reasoningEffort) args.push('-c', `model_reasoning_effort="${reasoningEffort}"`)
     if (model) args.push('-m', model)
     if (imagePath) args.push('--image', imagePath)
     if (schemaPath) args.push('--output-schema', schemaPath)

@@ -136,7 +136,7 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
     const depthFile = req.files?.['depthImage']?.[0]
     if (depthFile) {
       try {
-        depthPoints = await analyzeDepths(depthFile.path, codexResult.outerBoundary, codexResult.unit)
+        depthPoints = await analyzeDepths(depthFile.path, codexResult.outerBoundary, codexResult.unit, { unitSystem })
         warnings.push(`Depth image analyzed: ${depthPoints.length} depth point${depthPoints.length !== 1 ? 's' : ''} extracted`)
       } catch (err) {
         warnings.push(`Depth image analysis failed: ${err.message}`)

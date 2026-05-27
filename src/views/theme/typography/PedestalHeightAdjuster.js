@@ -59,6 +59,17 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value))
 }
 
+function isCornerDepthDescription(description) {
+  const text = String(description || '').toLowerCase()
+  return (
+    /\b(corner|vertex)\b/.test(text) ||
+    /\b(top|upper|bottom|lower)[-\s]?(left|right)\b/.test(text) ||
+    /\b(left|right)[-\s]?(top|upper|bottom|lower)\b/.test(text) ||
+    /\b(left|right)\s+edge\s+(top|upper|bottom|lower)\b/.test(text) ||
+    /\b(top|upper|bottom|lower)\s+(left|right)\s+edge\b/.test(text)
+  )
+}
+
 function estimatePedestalSpacing(pedestals) {
   if (!Array.isArray(pedestals) || pedestals.length < 2) return 60
 
@@ -149,16 +160,49 @@ function buildAiDepthAnchors(rawDepthPoints, gridSize, userPolygon, pedestals, d
   const seeded = []
   const dismissed = new Set(dismissedKeys)
 
-  // Each depth point now has an accurate position (GPT uses exact vertex coords for corners).
-  // Snap each one to the nearest pedestal and add as a height anchor.
+  // Deck corners (polygon vertices). Heights are usually written AT a corner, but
+  // the AI may place the point slightly inside it — close enough that a plain
+  // nearest-pedestal search grabs the first interior grid pedestal instead of the
+  // corner. Collect the pedestals sitting on corners so we can prefer them.
+  const CORNER_SNAP_RADIUS = 100 // cm — treat a height within 1m of a corner as that corner
+  const cornerPedestals = []
+  ;(Array.isArray(userPolygon) ? userPolygon : []).forEach((v) => {
+    const cx = Array.isArray(v) ? v[0] : v?.x
+    const cy = Array.isArray(v) ? v[1] : v?.y
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) return
+    let ped = null
+    let pedDist = 5 // cm — the corner pedestal should coincide with the vertex
+    for (const p of pedestals) {
+      const d = Math.hypot(p.x - cx, p.y - cy)
+      if (d < pedDist) {
+        pedDist = d
+        ped = p
+      }
+    }
+    if (ped) cornerPedestals.push(ped)
+  })
+
+  // Each depth point has a position from the AI (exact vertex coords for corners).
+  // Prefer snapping to a nearby corner pedestal; otherwise snap to the nearest pedestal.
   for (const dp of dpCm) {
     let best = null
-    let bestDist = 200 // max 2m snap radius
-    for (const ped of pedestals) {
+    const forceCornerSnap = isCornerDepthDescription(dp.description)
+    let bestDist = forceCornerSnap ? Infinity : CORNER_SNAP_RADIUS
+    for (const ped of cornerPedestals) {
       const d = Math.hypot(ped.x - dp.x, ped.y - dp.y)
       if (d < bestDist) {
         bestDist = d
         best = ped
+      }
+    }
+    if (!best) {
+      bestDist = 200 // max 2m snap radius to any pedestal
+      for (const ped of pedestals) {
+        const d = Math.hypot(ped.x - dp.x, ped.y - dp.y)
+        if (d < bestDist) {
+          bestDist = d
+          best = ped
+        }
       }
     }
     if (!best) continue
@@ -984,11 +1028,14 @@ const PedestalHeightAdjuster = ({
     const timer = setTimeout(() => {
       const newPeds = recalculatePedestalHeights(cps, basePedestals)
       setIsComputing(false)
-      if (arePedestalListsEqual(newPeds, pedestals)) return
+      let changed = false
+      setPedestals((prevPedestals) => {
+        if (arePedestalListsEqual(newPeds, prevPedestals)) return prevPedestals
+        changed = true
+        return newPeds
+      })
 
-      setPedestals(newPeds)
-
-      if (onDataCalculated && !arePedestalListsEqual(newPeds, calcData?.pedestals || [])) {
+      if (changed && onDataCalculated && !arePedestalListsEqual(newPeds, basePedestals)) {
         onDataCalculated({
           ...calcData,
           pedestals: newPeds,
@@ -1003,7 +1050,6 @@ const PedestalHeightAdjuster = ({
     recalculatePedestalHeights,
     calcData,
     onDataCalculated,
-    pedestals,
   ])
 
   // Memoized to avoid recomputing 65k+ pedestals on every pan/zoom render
@@ -1011,12 +1057,12 @@ const PedestalHeightAdjuster = ({
     () => pedestals.filter((p) => isPointOnPolygonEdge(p, userPolygon, 0.2)),
     [pedestals, userPolygon],
   )
-  const visibleAnchors = (() => {
+  const visibleAnchors = useMemo(() => {
     const merged = new Map()
     aiDepthAnchors.forEach((anchor) => merged.set(getPedestalKey(anchor.x, anchor.y), anchor))
     adjustedPedestals.forEach((anchor) => merged.set(getPedestalKey(anchor.x, anchor.y), anchor))
     return Array.from(merged.values())
-  })()
+  }, [aiDepthAnchors, adjustedPedestals])
 
   // Multi-pedestal selection state
   const [selectionStart, setSelectionStart] = useState(null)
