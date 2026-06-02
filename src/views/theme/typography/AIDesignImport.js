@@ -3,12 +3,6 @@ import PropTypes from 'prop-types'
 import Modal, { ModalHeader, ModalBody, ModalFooter } from '../../../components/Modal'
 import { analyzeSketch } from '../../../lib/sketchApi'
 
-const STAGES = [
-  { id: 'ocr', label: 'Extracting text labels...', duration: 5000 },
-  { id: 'geometry', label: 'Tracing perimeter...', duration: 6000 },
-  { id: 'finalize', label: 'Building deck plan...', duration: 2000 },
-]
-
 const BACKEND_BASE = 'http://localhost:3001'
 const IMPORT_STEPS = [
   { id: 'units', label: 'Units' },
@@ -26,24 +20,20 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
   const [isDraggingOver, setIsDraggingOver] = useState(false)
   const [isDepthDraggingOver, setIsDepthDraggingOver] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [currentStage, setCurrentStage] = useState(-1)
-  const [completedStages, setCompletedStages] = useState([])
+  const [progressEvents, setProgressEvents] = useState([])
   const [error, setError] = useState('')
   const [result, setResult] = useState(null)
   const fileInputRef = useRef(null)
   const depthFileInputRef = useRef(null)
-  const stageTimerRef = useRef(null)
   const analyzeWatchdogRef = useRef(null)
 
   useEffect(() => {
     return () => {
-      if (stageTimerRef.current) clearTimeout(stageTimerRef.current)
       if (analyzeWatchdogRef.current) clearTimeout(analyzeWatchdogRef.current)
     }
   }, [])
 
   const handleClose = () => {
-    if (stageTimerRef.current) clearTimeout(stageTimerRef.current)
     if (analyzeWatchdogRef.current) clearTimeout(analyzeWatchdogRef.current)
     setImageFile(null)
     setImagePreview(null)
@@ -53,8 +43,7 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
     setError('')
     setResult(null)
     setIsAnalyzing(false)
-    setCurrentStage(-1)
-    setCompletedStages([])
+    setProgressEvents([])
     setActiveStep(0)
     onClose()
   }
@@ -108,37 +97,14 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
     if (file) loadDepthFile(file)
   }, [])
 
-  const runStageProgress = () => {
-    let stageIndex = 0
-
-    const advanceStage = () => {
-      if (stageIndex < STAGES.length) {
-        setCurrentStage(stageIndex)
-        const duration = STAGES[stageIndex].duration
-        stageIndex += 1
-        stageTimerRef.current = setTimeout(() => {
-          setCompletedStages((prev) => [...prev, stageIndex - 1])
-          advanceStage()
-        }, duration)
-      }
-    }
-
-    advanceStage()
-  }
-
   const handleAnalyze = async () => {
     if (!imageFile) return
     setIsAnalyzing(true)
     setError('')
     setResult(null)
-    setCurrentStage(0)
-    setCompletedStages([])
-    runStageProgress()
+    setProgressEvents([])
     if (analyzeWatchdogRef.current) clearTimeout(analyzeWatchdogRef.current)
     analyzeWatchdogRef.current = setTimeout(() => {
-      if (stageTimerRef.current) clearTimeout(stageTimerRef.current)
-      setCurrentStage(-1)
-      setCompletedStages([])
       setIsAnalyzing(false)
       setError('Analysis timed out. Check that the backend server and Codex CLI are running, then try again.')
       // Last-resort net: must exceed the fetch abort (600s) so analyzeSketch's own
@@ -146,12 +112,16 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
     }, 620000)
 
     try {
-      const apiResult = await analyzeSketch(imageFile, depthImageFile || null, sketchUnitSystem)
+      const apiResult = await analyzeSketch(
+        imageFile,
+        depthImageFile || null,
+        sketchUnitSystem,
+        (event) => {
+          setProgressEvents((prev) => [...prev, event])
+        },
+      )
 
       if (analyzeWatchdogRef.current) clearTimeout(analyzeWatchdogRef.current)
-      if (stageTimerRef.current) clearTimeout(stageTimerRef.current)
-      setCurrentStage(-1)
-      setCompletedStages(STAGES.map((_, i) => i))
 
       if (!apiResult.success) {
         setError(apiResult.error || 'Analysis failed. Please try again.')
@@ -160,9 +130,6 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
       }
     } catch (err) {
       if (analyzeWatchdogRef.current) clearTimeout(analyzeWatchdogRef.current)
-      if (stageTimerRef.current) clearTimeout(stageTimerRef.current)
-      setCurrentStage(-1)
-      setCompletedStages([])
       setError(err.message || 'Analysis failed. Please try again.')
     } finally {
       if (analyzeWatchdogRef.current) clearTimeout(analyzeWatchdogRef.current)
@@ -173,7 +140,7 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
   const handleApply = () => {
     if (!result || !result.canvasShapes || result.canvasShapes.length === 0) return
     const depthPoints = result.deckPlan?.depthPoints || []
-    onImport(result.canvasShapes, depthPoints)
+    onImport(result.canvasShapes, depthPoints, sketchUnitSystem)
     handleClose()
   }
 
@@ -305,9 +272,7 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
 
               {isAnalyzing && (
                 <StageProgress
-                  stages={STAGES}
-                  currentStage={currentStage}
-                  completedStages={completedStages}
+                  events={progressEvents}
                 />
               )}
 
@@ -867,71 +832,75 @@ const ExampleSketchCard = ({ title, subtitle, variant }) => {
   )
 }
 
-const StageProgress = ({ stages, currentStage, completedStages }) => (
-  <section
-    style={{
-      padding: '14px 16px',
-      background: 'oklch(97% 0.03 240)',
-      border: '1px solid oklch(86% 0.08 240)',
-      borderRadius: 12,
-    }}
-  >
-    <div style={{ fontWeight: 650, color: 'oklch(36% 0.14 240)', marginBottom: 12 }}>
-      Analyzing sketch
-    </div>
-    <div style={{ display: 'grid', gap: 10 }}>
-      {stages.map((stage, index) => {
-        const isCompleted = completedStages.includes(index) || currentStage > index
-        const isActive = currentStage === index && !isCompleted
-        return (
-          <div
-            key={stage.id}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              color: isCompleted
-                ? 'oklch(42% 0.13 150)'
-                : isActive
-                  ? 'oklch(38% 0.18 240)'
-                  : 'var(--pc-ink-4)',
-              opacity: !isCompleted && !isActive ? 0.55 : 1,
-              fontSize: 13,
-            }}
-          >
-            <span
+const StageProgress = ({ events }) => {
+  const visibleEvents = events.length > 0
+    ? events
+    : [{ stage: 'start', message: 'Starting analysis', elapsedMs: 0 }]
+
+  return (
+    <section
+      style={{
+        padding: '14px 16px',
+        background: 'oklch(97% 0.03 240)',
+        border: '1px solid oklch(86% 0.08 240)',
+        borderRadius: 12,
+      }}
+    >
+      <div style={{ fontWeight: 650, color: 'oklch(36% 0.14 240)', marginBottom: 12 }}>
+        Analyzing sketch
+      </div>
+      <div style={{ display: 'grid', gap: 10 }}>
+        {visibleEvents.map((event, index) => {
+          const isLatest = index === visibleEvents.length - 1
+          return (
+            <div
+              key={`${event.stage || 'stage'}-${index}`}
               style={{
-                width: 22,
-                height: 22,
-                borderRadius: 999,
-                display: 'grid',
-                placeItems: 'center',
-                flexShrink: 0,
-                background: isCompleted
-                  ? 'var(--pc-ok)'
-                  : isActive
-                    ? 'var(--pc-accent)'
-                    : 'var(--pc-line-2)',
-                color: '#fff',
-                fontSize: 11,
-                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                color: isLatest ? 'oklch(38% 0.18 240)' : 'oklch(42% 0.13 150)',
+                fontSize: 13,
               }}
             >
-              {isCompleted ? (
-                '✓'
-              ) : isActive ? (
-                <span className="pc-spin" style={spinnerStyle} />
-              ) : (
-                index + 1
-              )}
-            </span>
-            <span style={{ fontWeight: isActive ? 650 : 500 }}>{stage.label}</span>
-          </div>
-        )
-      })}
-    </div>
-  </section>
-)
+              <span
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: 999,
+                  display: 'grid',
+                  placeItems: 'center',
+                  flexShrink: 0,
+                  background: isLatest ? 'var(--pc-accent)' : 'var(--pc-ok)',
+                  color: '#fff',
+                  fontSize: 11,
+                  fontWeight: 700,
+                }}
+              >
+                {isLatest ? <span className="pc-spin" style={spinnerStyle} /> : '✓'}
+              </span>
+              <span style={{ fontWeight: isLatest ? 650 : 500, flex: 1 }}>{event.message}</span>
+              <span className="pc-mono" style={{ color: 'var(--pc-ink-4)', fontSize: 11 }}>
+                {formatElapsed(event.elapsedMs)}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+      <div style={{ color: 'var(--pc-ink-4)', fontSize: 11, marginTop: 10, lineHeight: 1.45 }}>
+        Progress shows pipeline events and model-visible results. Private model reasoning is not displayed.
+      </div>
+    </section>
+  )
+}
+
+function formatElapsed(elapsedMs) {
+  const seconds = Math.max(0, Math.round((elapsedMs || 0) / 1000))
+  if (seconds < 60) return `${seconds}s`
+  const mins = Math.floor(seconds / 60)
+  const rem = seconds % 60
+  return `${mins}m ${rem}s`
+}
 
 const ResultDetails = ({ result }) => (
   <section style={{ display: 'grid', gap: 12 }}>
@@ -1428,14 +1397,13 @@ ExampleSketchInline.propTypes = {
 }
 
 StageProgress.propTypes = {
-  stages: PropTypes.arrayOf(
+  events: PropTypes.arrayOf(
     PropTypes.shape({
-      id: PropTypes.string.isRequired,
-      label: PropTypes.string.isRequired,
+      stage: PropTypes.string,
+      message: PropTypes.string.isRequired,
+      elapsedMs: PropTypes.number,
     }),
   ).isRequired,
-  currentStage: PropTypes.number.isRequired,
-  completedStages: PropTypes.arrayOf(PropTypes.number).isRequired,
 }
 
 ResultDetails.propTypes = {

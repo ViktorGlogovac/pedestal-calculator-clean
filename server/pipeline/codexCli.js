@@ -7,15 +7,16 @@ const DEFAULT_TIMEOUT_MS = 180000
 let didAttemptLogin = false
 
 function resolveOpenAiApiKey() {
-  return process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY || ''
+  return process.env.OPENAI_API_KEY || ''
 }
 
-function needsApiKeyLogin(authPath) {
+function needsApiKeyLogin(authPath, apiKey) {
   if (!fs.existsSync(authPath)) return true
 
   try {
     const auth = JSON.parse(fs.readFileSync(authPath, 'utf8'))
-    return auth.auth_mode !== 'apikey' && auth.auth_mode !== 'api_key'
+    const authMode = auth.auth_mode === 'apikey' || auth.auth_mode === 'api_key'
+    return !authMode || auth.OPENAI_API_KEY !== apiKey
   } catch (_) {
     return true
   }
@@ -30,7 +31,7 @@ function ensureCodexAuth() {
 
   const codexBin = process.env.CODEX_CLI_PATH || 'codex'
   const authPath = path.join(os.homedir(), '.codex', 'auth.json')
-  if (!needsApiKeyLogin(authPath)) return
+  if (!needsApiKeyLogin(authPath, apiKey)) return
 
   const login = spawnSync(codexBin, ['login', '--with-api-key'], {
     env: {
@@ -50,6 +51,12 @@ function ensureCodexAuth() {
 
 function callCodexCli({ prompt, imagePath = null, outputSchema = null, timeoutMs = DEFAULT_TIMEOUT_MS }) {
   return new Promise((resolve, reject) => {
+    const apiKey = resolveOpenAiApiKey()
+    if (!apiKey) {
+      reject(new Error('OPENAI_API_KEY is not configured on the server. Set a valid server-side API key and restart the backend.'))
+      return
+    }
+
     ensureCodexAuth()
 
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sketch-codex-'))
@@ -65,6 +72,9 @@ function callCodexCli({ prompt, imagePath = null, outputSchema = null, timeoutMs
     // gpt-5 is a reasoning model; without a cap it reasons for minutes on complex
     // sketches. Default to "low" effort for speed; tune via CODEX_REASONING_EFFORT
     // (minimal | low | medium | high) without a redeploy. Set to "" to disable.
+    //
+    // Do not default to "minimal": Codex CLI can inherit web_search from user
+    // config, and the Responses API rejects web_search with minimal effort.
     const reasoningEffort = process.env.CODEX_REASONING_EFFORT ?? 'low'
     const args = [
       'exec',
@@ -72,6 +82,7 @@ function callCodexCli({ prompt, imagePath = null, outputSchema = null, timeoutMs
       '--sandbox', 'read-only',
       '--skip-git-repo-check',
       '--ephemeral',
+      '--ignore-user-config',
       '-o', outputPath,
     ]
 
@@ -85,7 +96,7 @@ function callCodexCli({ prompt, imagePath = null, outputSchema = null, timeoutMs
       cwd: process.cwd(),
       env: {
         ...process.env,
-        OPENAI_API_KEY: resolveOpenAiApiKey(),
+        OPENAI_API_KEY: apiKey,
         // Avoid terminal control sequences and interactive prompts in server logs.
         NO_COLOR: '1',
       },

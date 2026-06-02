@@ -348,7 +348,8 @@ const PedestalCalculatorMain = () => {
     [gridSize],
   )
 
-  const handleAIImport = useCallback((shapes, depthPoints = []) => {
+  const handleAIImport = useCallback((shapes, depthPoints = [], importUnitSystem = unitSystem) => {
+    const normalizedImportUnitSystem = importUnitSystem === 'imperial' ? 'imperial' : 'metric'
     localStorage.setItem('pedestalGrid_shapes', JSON.stringify(shapes))
     localStorage.setItem('pedestalGrid_activeShapeIndex', '0')
     localStorage.setItem('pedestalGrid_gridSize', '35')
@@ -364,6 +365,7 @@ const PedestalCalculatorMain = () => {
       }))
     )
     setGridSize(35)
+    setUnitSystem(normalizedImportUnitSystem)
     setCalcData({
       tiles: [],
       pedestals: [],
@@ -384,7 +386,7 @@ const PedestalCalculatorMain = () => {
 
     setProjectRevision((prev) => prev + 1)
     setStep(1)
-  }, [])
+  }, [unitSystem])
 
   const metrics = buildCalculatorMetrics(points, calcData, unitSystem)
   const currentStep = steps.find((item) => item.number === step) || steps[0]

@@ -15,7 +15,6 @@ const path    = require('path')
 const fs      = require('fs')
 
 const { upload, processUpload, uploadsDir } = require('../pipeline/ingest')
-const { preprocessImage }    = require('../pipeline/preprocess')
 const { detectTextRegions }  = require('../pipeline/textDetect')
 const { extractTextLocal }   = require('../pipeline/ocrLocal')
 const { extractTextVision }  = require('../pipeline/ocrVision')
@@ -32,7 +31,7 @@ const { traceOutline }       = require('../pipeline/outlineTrace')
 const { extractShapeVision }  = require('../pipeline/shapeVision')
 const { analyzeSketch }       = require('../pipeline/analyzeSketch')
 const { analyzeDepths }       = require('../pipeline/analyzeDepths')
-const { fileToBase64 } = require('../utils/imageUtils')
+const { getImageDimensions } = require('../utils/imageUtils')
 const {
   drawTextBoxes, drawClassifiedSegments, drawLineGraph, drawCandidates,
 } = require('../pipeline/debugOverlay')
@@ -48,50 +47,96 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
   const warnings = []
   const userNotes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : ''
   const unitSystem = normalizeUnitSystem(req.body?.unitSystem)
+  const isStreaming = req.query?.stream === '1'
+  const progress = (stage, message, detail = {}) => {
+    if (!isStreaming || res.writableEnded) return
+    res.write(JSON.stringify({
+      type: 'progress',
+      stage,
+      message,
+      detail,
+      elapsedMs: Date.now() - startedAt,
+    }) + '\n')
+  }
+  const finishError = (status, payload) => {
+    if (!isStreaming) return res.status(status).json(payload)
+    res.write(JSON.stringify({
+      type: 'error',
+      status,
+      ...payload,
+      elapsedMs: Date.now() - startedAt,
+    }) + '\n')
+    return res.end()
+  }
+  const finishSuccess = (payload) => {
+    if (!isStreaming) return res.json(payload)
+    res.write(JSON.stringify({
+      type: 'complete',
+      ...payload,
+      elapsedMs: Date.now() - startedAt,
+    }) + '\n')
+    return res.end()
+  }
+
+  if (isStreaming) {
+    res.status(200)
+    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8')
+    res.setHeader('Cache-Control', 'no-cache, no-transform')
+    res.setHeader('X-Accel-Buffering', 'no')
+    res.flushHeaders?.()
+  }
+
   console.log(`[sketch] /analyze start files=${Object.keys(req.files || {}).join(',') || 'none'}`)
 
   // ── Stage 1: Ingest ───────────────────────────────────────────────────────
   let ingestResult
   try {
+    progress('ingest', 'Reading uploaded sketch')
     const mainFile = req.files?.['image']?.[0] || req.file
     ingestResult = processUpload(mainFile, null)
   } catch (err) {
-    return res.status(400).json({ success: false, error: `Ingest failed: ${err.message}`, warnings })
+    return finishError(400, { success: false, error: `Ingest failed: ${err.message}`, warnings })
   }
 
   const { sessionId, originalPath } = ingestResult
   const debugData = { sessionId, originalPath, stages: {}, debugImages: {} }
+  progress('ingest', 'Upload accepted', {
+    filename: ingestResult.originalFilename,
+    sizeBytes: ingestResult.sizeBytes,
+  })
 
-  // ── Stage 2: Preprocess ───────────────────────────────────────────────────
-  let preprocessResult
+  // ── Stage 2: Image metadata ────────────────────────────────────────────────
+  // The active Codex path sends the original image. Full preprocessing is only
+  // needed by the legacy CV/OCR pipeline below, which this route returns before
+  // reaching, so avoid that wasted Sharp/OpenCV work on normal imports.
+  let imageDimensions = { width: 800, height: 600 }
   try {
-    preprocessResult = await preprocessImage(originalPath, sessionId, uploadsDir)
-    debugData.stages.preprocess = {
-      path: preprocessResult.preprocessedPath,
-      width: preprocessResult.width,
-      height: preprocessResult.height,
-    }
+    progress('metadata', 'Reading image size')
+    imageDimensions = await getImageDimensions(originalPath)
+    debugData.stages.metadata = imageDimensions
     debugData.debugImages.original     = `/uploads/${path.basename(originalPath)}`
-    debugData.debugImages.preprocessed = `/uploads/${path.basename(preprocessResult.preprocessedPath)}`
+    progress('metadata', 'Image metadata ready', imageDimensions)
   } catch (err) {
-    warnings.push(`Preprocess: ${err.message}`)
-    preprocessResult = {
-      preprocessedPath: originalPath,
-      width: 0, height: 0,
-      base64: fileToBase64(originalPath),
-    }
+    warnings.push(`Image metadata: ${err.message}`)
+    progress('metadata', 'Image metadata unavailable; using defaults')
   }
 
-  const imgW = preprocessResult.width  || 800
-  const imgH = preprocessResult.height || 600
-  const imgPath = preprocessResult.preprocessedPath
+  const imgW = imageDimensions.width  || 800
+  const imgH = imageDimensions.height || 600
+  const imgPath = originalPath
 
   // ── Simple Codex CLI Analysis ─────────────────────────────────────────────
   // One image call returns one clockwise orthogonal walk.  No OCR/CV/fallback
   // path is used for the main shape.
   let codexResult = null
   try {
+    progress('outline-ai', 'AI is reading the outer perimeter and edge dimensions', { unitSystem })
     codexResult = await analyzeSketch(originalPath, userNotes, unitSystem)
+    progress('outline-ai', 'AI returned a closed outline', {
+      corners: codexResult.outerBoundary.length,
+      segments: codexResult.segments.length,
+      unit: codexResult.unit,
+    })
     debugData.stages.codexAnalysis = {
       corners: codexResult.outerBoundary.length,
       unit: codexResult.unit,
@@ -112,7 +157,7 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
     warnings.push(`Codex CLI analysis failed: ${err.message}`)
     debugData.stages.codexAnalysis = { error: err.message }
     console.warn(`[sketch] /analyze failed in ${Date.now() - startedAt}ms: ${err.message}`)
-    return res.status(422).json({
+    return finishError(422, {
       success: false,
       sessionId,
       error: err.message,
@@ -122,6 +167,7 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
   }
 
   if (codexResult && codexResult.outerBoundary.length >= 4) {
+    progress('geometry', 'Cleaning outline geometry')
     const orthogonalBoundary = orthogonalizeMostlyAxisAlignedPoints(
       codexResult.outerBoundary,
       warnings,
@@ -136,13 +182,17 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
     const depthFile = req.files?.['depthImage']?.[0]
     if (depthFile) {
       try {
+        progress('depth-ai', 'AI is reading pedestal depth/height annotations')
         depthPoints = await analyzeDepths(depthFile.path, codexResult.outerBoundary, codexResult.unit, { unitSystem })
+        progress('depth-ai', 'Depth annotations extracted', { depthPointCount: depthPoints.length })
         warnings.push(`Depth image analyzed: ${depthPoints.length} depth point${depthPoints.length !== 1 ? 's' : ''} extracted`)
       } catch (err) {
         warnings.push(`Depth image analysis failed: ${err.message}`)
+        progress('depth-ai', 'Depth analysis failed; continuing without depth points', { error: err.message })
       }
     }
 
+    progress('finalize', 'Building canvas shapes and quote-ready plan')
     const deckPlan = {
       unit: codexResult.unit,
       requestedUnitSystem: unitSystem,
@@ -183,7 +233,7 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
     if (debugStore.size > 50) debugStore.delete(debugStore.keys().next().value)
 
     console.log(`[sketch] /analyze success in ${Date.now() - startedAt}ms`)
-    return res.json({
+    return finishSuccess({
       success: true,
       sessionId,
       outputDoc,
@@ -205,7 +255,7 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
     })
   }
 
-  return res.status(422).json({
+  return finishError(422, {
     success: false,
     sessionId,
     error: 'Codex CLI did not return a usable polygon.',

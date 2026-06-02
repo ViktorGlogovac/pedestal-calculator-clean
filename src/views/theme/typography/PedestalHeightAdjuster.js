@@ -164,14 +164,15 @@ function buildAiDepthAnchors(rawDepthPoints, gridSize, userPolygon, pedestals, d
   // the AI may place the point slightly inside it — close enough that a plain
   // nearest-pedestal search grabs the first interior grid pedestal instead of the
   // corner. Collect the pedestals sitting on corners so we can prefer them.
-  const CORNER_SNAP_RADIUS = 100 // cm — treat a height within 1m of a corner as that corner
+  const pedestalSpacing = estimatePedestalSpacing(pedestals)
+  const CORNER_SNAP_RADIUS = Math.max(100, pedestalSpacing * 1.75) // cm — allow AI corner marks to land about 1-2 grid cells off
   const cornerPedestals = []
   ;(Array.isArray(userPolygon) ? userPolygon : []).forEach((v) => {
     const cx = Array.isArray(v) ? v[0] : v?.x
     const cy = Array.isArray(v) ? v[1] : v?.y
     if (!Number.isFinite(cx) || !Number.isFinite(cy)) return
     let ped = null
-    let pedDist = 5 // cm — the corner pedestal should coincide with the vertex
+    let pedDist = Math.max(5, pedestalSpacing * 0.25) // cm — the corner pedestal should be very close to the vertex
     for (const p of pedestals) {
       const d = Math.hypot(p.x - cx, p.y - cy)
       if (d < pedDist) {
@@ -448,11 +449,11 @@ const PedestalHeightAdjuster = ({
 
   // Recalculate pedestal heights using triangulation
   const recalculatePedestalHeights = useCallback(
-    (controlPoints, currentPedestals) => {
+    (controlPoints, currentPedestals, activeAdjustedPedestals = adjustedPedestals) => {
       // Identify all edge pedestals
       const edgePedestals = currentPedestals.filter((p) => isPointOnPolygonEdge(p, userPolygon))
       // Identify manually edited edge pedestals (manual anchors)
-      const manualEdgeAnchors = adjustedPedestals.filter((p) =>
+      const manualEdgeAnchors = activeAdjustedPedestals.filter((p) =>
         isPointOnPolygonEdge(p, userPolygon),
       )
       // Find the maximum height among all pedestals
@@ -537,7 +538,9 @@ const PedestalHeightAdjuster = ({
       // Recompute heights for all pedestals
       const recalculatedPedestals = currentPedestals.map((pedestal) => {
         // Check for manual override
-        const manual = adjustedPedestals.find((p) => p.x === pedestal.x && p.y === pedestal.y)
+        const manual = activeAdjustedPedestals.find(
+          (p) => p.x === pedestal.x && p.y === pedestal.y,
+        )
         if (manual) return { ...manual }
         // Edge pedestals: use edgeHeights
         if (isPointOnPolygonEdge(pedestal, userPolygon)) {
@@ -560,7 +563,7 @@ const PedestalHeightAdjuster = ({
         return { ...pedestal, height: nearestHeight }
       })
 
-      const manualAnchors = adjustedPedestals.filter(
+      const manualAnchors = activeAdjustedPedestals.filter(
         (anchor) => anchor.height !== undefined && anchor.height !== null,
       )
       if (manualAnchors.length === 0) {
@@ -612,7 +615,9 @@ const PedestalHeightAdjuster = ({
       // anchor on a nearby row), so overriding it with a flat edge-to-edge interpolation
       // would lose that influence (e.g. the diagonal neighbor of a 10in anchor getting 4in).
       const constrainedPedestals = recalculatedPedestals.map((pedestal) => {
-        const manual = adjustedPedestals.find((p) => p.x === pedestal.x && p.y === pedestal.y)
+        const manual = activeAdjustedPedestals.find(
+          (p) => p.x === pedestal.x && p.y === pedestal.y,
+        )
         if (manual) return pedestal
 
         // Perimeter pedestals were already set by the perimeter pass above — preserve them
@@ -680,7 +685,9 @@ const PedestalHeightAdjuster = ({
       })
 
       const locallyInfluencedPedestals = constrainedPedestals.map((pedestal) => {
-        const manual = adjustedPedestals.find((p) => p.x === pedestal.x && p.y === pedestal.y)
+        const manual = activeAdjustedPedestals.find(
+          (p) => p.x === pedestal.x && p.y === pedestal.y,
+        )
         if (manual) return pedestal
         const isConstrained = constrainedPedestalKeys.has(getPedestalKey(pedestal.x, pedestal.y))
         const nearbyAnchors = []
@@ -878,13 +885,14 @@ const PedestalHeightAdjuster = ({
     const cps = buildControlPoints(updatedPoints, newAdjustedPedestals)
 
     if (cps.length >= 3) {
-      const newPeds = recalculatePedestalHeights(cps, updatedPedestals)
+      const newPeds = recalculatePedestalHeights(cps, updatedPedestals, newAdjustedPedestals)
       setPedestals(newPeds)
 
       if (onDataCalculated) {
         onDataCalculated({
           ...calcData,
           pedestals: newPeds,
+          adjustedPedestals: newAdjustedPedestals,
         })
       }
     } else {
@@ -893,6 +901,7 @@ const PedestalHeightAdjuster = ({
         onDataCalculated({
           ...calcData,
           pedestals: updatedPedestals,
+          adjustedPedestals: newAdjustedPedestals,
         })
       }
     }
@@ -925,13 +934,14 @@ const PedestalHeightAdjuster = ({
 
     if (cps.length >= 3) {
       // Recalculate all pedestal heights
-      const newPeds = recalculatePedestalHeights(cps, pedestals)
+      const newPeds = recalculatePedestalHeights(cps, pedestals, nextAdjustedPedestals)
       setPedestals(newPeds)
 
       if (onDataCalculated) {
         onDataCalculated({
           ...calcData,
           pedestals: newPeds,
+          adjustedPedestals: nextAdjustedPedestals,
         })
       }
     } else {
@@ -950,6 +960,7 @@ const PedestalHeightAdjuster = ({
           onDataCalculated({
             ...calcData,
             pedestals: updatedPedestals,
+            adjustedPedestals: nextAdjustedPedestals,
           })
         }
       }
@@ -1026,7 +1037,7 @@ const PedestalHeightAdjuster = ({
 
     setIsComputing(true)
     const timer = setTimeout(() => {
-      const newPeds = recalculatePedestalHeights(cps, basePedestals)
+      const newPeds = recalculatePedestalHeights(cps, basePedestals, adjustedPedestals)
       setIsComputing(false)
       let changed = false
       setPedestals((prevPedestals) => {
@@ -1039,6 +1050,7 @@ const PedestalHeightAdjuster = ({
         onDataCalculated({
           ...calcData,
           pedestals: newPeds,
+          adjustedPedestals,
         })
       }
     }, 0)
@@ -1117,6 +1129,7 @@ const PedestalHeightAdjuster = ({
       return
     }
     const newAdjusted = [...adjustedPedestals]
+    let updatedPedestals = pedestals
     selectedPedestals.forEach((p) => {
       const idx = newAdjusted.findIndex((ap) => ap.x === p.x && ap.y === p.y)
       const newHeight = unitSystem === 'imperial' ? numericVal * 2.54 : numericVal
@@ -1126,8 +1139,26 @@ const PedestalHeightAdjuster = ({
       } else {
         newAdjusted.push(updatedPed)
       }
+      updatedPedestals = updatedPedestals.map((pedestal) =>
+        pedestal.x === p.x && pedestal.y === p.y ? updatedPed : pedestal,
+      )
     })
     setAdjustedPedestals(newAdjusted)
+
+    const cps = buildControlPoints(points, newAdjusted)
+    const nextPedestals =
+      cps.length >= 3
+        ? recalculatePedestalHeights(cps, updatedPedestals, newAdjusted)
+        : updatedPedestals
+    setPedestals(nextPedestals)
+    if (onDataCalculated) {
+      onDataCalculated({
+        ...calcData,
+        pedestals: nextPedestals,
+        adjustedPedestals: newAdjusted,
+      })
+    }
+
     setShowMultiHeightModal(false)
     setSelectedPedestals([])
     setSelectionStart(null)

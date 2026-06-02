@@ -3,7 +3,7 @@
  *
  * The user draws the deck shape a second time with pedestal heights written at
  * their locations. Bare numbers (no unit written) are interpreted in the unit
- * system the user selected at the start: metric → cm, imperial → in.
+ * system the user selected at the start: metric → mm, imperial → in.
  * Codex CLI reads every depth value and expresses
  * each position as a fraction (fx, fy) of the deck bounding box. The JS code
  * converts those fractions to real deck coordinates using the polygon from
@@ -52,12 +52,12 @@ async function analyzeDepths(imagePath, deckPolygon, deckUnit, { isMainSketch = 
 
   // Default unit for bare numbers (no unit written next to them) follows the unit
   // system the user picked at the start — NOT a hardcoded inch assumption.
-  const defaultDepthUnit = String(unitSystem).toLowerCase() === 'imperial' ? 'in' : 'cm'
+  const defaultDepthUnit = String(unitSystem).toLowerCase() === 'imperial' ? 'in' : 'mm'
   const exampleValues =
     defaultDepthUnit === 'in'
       ? `2", 3", 4", 5", 7", 8", 10"`
-      : '2cm, 3cm, 4cm, 5cm, 7cm, 8cm, 10cm'
-  const smallRange = defaultDepthUnit === 'in' ? '1"–24"' : '1–60 cm'
+      : '5mm, 6mm, 7mm, 8mm, 10mm, 15mm'
+  const smallRange = defaultDepthUnit === 'in' ? '1"–24"' : '1–600 mm'
 
   const maxX = Math.max(...deckPolygon.map((p) => p.x))
   const maxY = Math.max(...deckPolygon.map((p) => p.y))
@@ -104,7 +104,7 @@ async function analyzeDepths(imagePath, deckPolygon, deckUnit, { isMainSketch = 
     '- If a height annotation is written on or just outside the perimeter edge, assign it to the nearest deck vertex/corner unless it is clearly marking an interior drain or mid-deck point. Do NOT return a free-floating coordinate along the edge for perimeter corner-height drawings.\n' +
     '- If the annotation is in the interior (drain, mid-deck mark), estimate its position as accurately as possible.\n' +
     '- value: numeric depth/height number only.\n' +
-    `- unit: use exactly the unit written next to the number when one IS written ("mm", "cm", "m", "in", inch marks " = in, apostrophe ' = ft). If a number has NO unit written next to it, set unit = "${defaultDepthUnit}" — the unit system the user selected at the start. Do NOT assume inches for bare numbers.\n` +
+    `- unit: use exactly the unit written next to the number when one IS written ("mm", "cm", "m", "in", inch marks " = in, apostrophe ' = ft). If a number has NO unit written next to it, set unit = "${defaultDepthUnit}" — the default depth unit for the user-selected system. In metric projects, bare depth/height numbers are millimeters unless the image explicitly says otherwise. Do NOT assume inches or centimeters for bare metric depth values.\n` +
     '- description: brief label (e.g. "top-right corner", "drain at centre", "bottom-left step").\n' +
     '- Include EVERY depth/height annotation visible — do not skip any.\n' +
     '- Interior repeated handwritten values are valid pedestal heights and must be included.\n' +
@@ -195,7 +195,7 @@ async function analyzeDepths(imagePath, deckPolygon, deckUnit, { isMainSketch = 
 function normalizeDepths(rawDepths, { maxX, maxY, defaultDepthUnit, deckPolygon }) {
   if (!Array.isArray(rawDepths)) return []
 
-  const defaultUnit = defaultDepthUnit || 'cm'
+  const defaultUnit = defaultDepthUnit || 'mm'
   const vertexSnapDistance = Math.max(Math.min(maxX, maxY) * 0.18, 0.01)
 
   return rawDepths
