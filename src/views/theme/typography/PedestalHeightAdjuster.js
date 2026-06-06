@@ -1039,14 +1039,17 @@ const PedestalHeightAdjuster = ({
     const timer = setTimeout(() => {
       const newPeds = recalculatePedestalHeights(cps, basePedestals, adjustedPedestals)
       setIsComputing(false)
-      let changed = false
-      setPedestals((prevPedestals) => {
-        if (arePedestalListsEqual(newPeds, prevPedestals)) return prevPedestals
-        changed = true
-        return newPeds
-      })
+      setPedestals((prevPedestals) =>
+        arePedestalListsEqual(newPeds, prevPedestals) ? prevPedestals : newPeds,
+      )
 
-      if (changed && onDataCalculated && !arePedestalListsEqual(newPeds, basePedestals)) {
+      // Propagate the recomputed heights up to calcData so the Quote step sees
+      // them. Gate on a SYNCHRONOUS comparison against basePedestals — not on a
+      // flag set inside the setPedestals updater. That updater runs during the
+      // next render, so the flag is still false here and onDataCalculated never
+      // fired: AI-applied depth heights showed on this step but stayed 0 in the
+      // quote until a manual edit (which calls onDataCalculated directly).
+      if (onDataCalculated && !arePedestalListsEqual(newPeds, basePedestals)) {
         onDataCalculated({
           ...calcData,
           pedestals: newPeds,

@@ -334,7 +334,19 @@ const TileLayout = ({
       ;[tileWidthCm, tileHeightCm] = [tileHeightCm, tileWidthCm]
     }
 
-    const pedestalStepCm = Math.min(tileWidthCm, tileHeightCm)
+    // Pedestal placement per the official slab-size chart: a pedestal on every
+    // tile corner, plus each edge is split into equal segments of at most
+    // ~60 cm (24 in). So <=60 cm edges stay at corners and a 120 cm edge gets
+    // one extra mid-row at 60 cm — e.g. a 60x120 tile yields the same uniform
+    // 60 cm pedestal grid as a 60x60 tile.
+    const spacingCm = unitSystem === 'imperial' ? 60.96 : 60
+    // Only a FULL tile gets the mid-edge support. Any piece cut by the boundary
+    // or an offset (smaller than the full tile in either dimension) gets corners
+    // only — passing Infinity keeps an axis at a single segment (corners).
+    const subdivideTilePiece = (px, py, w, h) => {
+      const isFullTile = w >= tileWidthCm - EPSILON && h >= tileHeightCm - EPSILON
+      return subdivideTileRect(px, py, w, h, isFullTile ? spacingCm : Infinity)
+    }
     const xs = controlPoints.map((p) => p.x)
     const ys = controlPoints.map((p) => p.y)
     const minX = Math.min(...xs)
@@ -377,7 +389,7 @@ const TileLayout = ({
           const curTileH = Math.min(offsetY, tileHeightCm, maxY - y)
           // Only create if the tile is not a thin sliver (e.g., > 2cm)
           if (curTileW > 0 && curTileH > 2) {
-            const subRects = subdivideTileRect(x, y, curTileW, curTileH, pedestalStepCm)
+            const subRects = subdivideTilePiece(x, y, curTileW, curTileH)
             const mergedSubRectShape = []
             subRects.forEach((subRect) => {
               const intersection = getTileIntersection(subRect, projectGeometry)
@@ -429,7 +441,7 @@ const TileLayout = ({
           const curTileH = Math.min(tileHeightCm, maxY - y)
           if (curTileW <= 0 || curTileH <= 0) continue
 
-          const subRects = subdivideTileRect(x, y, curTileW, curTileH, pedestalStepCm)
+          const subRects = subdivideTilePiece(x, y, curTileW, curTileH)
           const mergedSubRectShape = []
 
           subRects.forEach((subRect) => {
@@ -501,7 +513,7 @@ const TileLayout = ({
           const curTileH = Math.min(tileHeightCm, maxY - y)
           if (curTileW <= 0 || curTileH <= 0) continue
 
-          const subRects = subdivideTileRect(x, y, curTileW, curTileH, pedestalStepCm)
+          const subRects = subdivideTilePiece(x, y, curTileW, curTileH)
           const mergedSubRectShape = []
 
           subRects.forEach((subRect) => {
@@ -708,12 +720,72 @@ const TileLayout = ({
       return merged
     }
 
-    const mergedPedestals = mergeClosePedestalsAdaptive(
-      dedupeAndSnapPedestals(newPedestals, userPolygonState),
-      buildTileCornerSet(newTiles),
-      userPolygonState,
-      60,
-      orientationState,
+    // Collapse pedestals that sit within `tol` cm of each other. Under a 1/3
+    // offset a staggered tile's corner can land ~20 cm from a neighbour's
+    // mid-edge support, which shows as doubled dots on edges. The smallest
+    // legitimate spacing is the 30 cm side of a 30x120 tile, so a sub-30 cm
+    // tolerance only removes those near-duplicates and never collapses real
+    // spacing. Tile corners and deck-boundary pedestals are NEVER moved: if a
+    // cluster contains one, it is kept exactly in place and the other (interior)
+    // near-duplicate is dropped, so corners always hold their position.
+    function collapseNearDuplicatePedestals(list, isProtected, tol = 24) {
+      const used = new Array(list.length).fill(false)
+      const result = []
+      const tolSq = tol * tol
+      for (let i = 0; i < list.length; i++) {
+        if (used[i]) continue
+        const cluster = [list[i]]
+        used[i] = true
+        for (let c = 0; c < cluster.length; c++) {
+          const a = cluster[c]
+          for (let j = 0; j < list.length; j++) {
+            if (used[j]) continue
+            const dx = a.x - list[j].x
+            const dy = a.y - list[j].y
+            if (dx * dx + dy * dy <= tolSq) {
+              used[j] = true
+              cluster.push(list[j])
+            }
+          }
+        }
+        if (cluster.length === 1) {
+          result.push(list[i])
+          continue
+        }
+        const protectedMembers = cluster.filter(isProtected)
+        if (protectedMembers.length > 0) {
+          // Keep corner / boundary pedestals exactly where they are; the nearby
+          // interior duplicates are dropped so corners never drift.
+          protectedMembers.forEach((p) => result.push(p))
+        } else {
+          const sum = cluster.reduce(
+            (acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y, height: acc.height + p.height }),
+            { x: 0, y: 0, height: 0 },
+          )
+          result.push({
+            x: sum.x / cluster.length,
+            y: sum.y / cluster.length,
+            height: sum.height / cluster.length,
+          })
+        }
+      }
+      return result
+    }
+
+    const tileCornerSet = buildTileCornerSet(newTiles)
+    const isProtectedPedestal = (pedestal) =>
+      isTileCornerPedestal(pedestal, tileCornerSet) ||
+      (userPolygonState && isOnBoundary(pedestal, userPolygonState))
+
+    const mergedPedestals = collapseNearDuplicatePedestals(
+      mergeClosePedestalsAdaptive(
+        dedupeAndSnapPedestals(newPedestals, userPolygonState),
+        tileCornerSet,
+        userPolygonState,
+        60,
+        orientationState,
+      ),
+      isProtectedPedestal,
     )
     setPedestals(mergedPedestals)
 

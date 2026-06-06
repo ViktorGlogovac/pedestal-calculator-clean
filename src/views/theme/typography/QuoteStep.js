@@ -32,6 +32,32 @@ const pedestalOptions = {
     { id: 'EN-SLO-D2', min: 392, max: 785 },
     { id: 'EN-SLO-D3', min: 520, max: 975 },
   ],
+  'Project X': [
+    { id: 'EN-X-1', min: 29, max: 49 },
+    { id: 'EN-X-2', min: 49, max: 138 },
+    { id: 'EN-X-3', min: 135, max: 340 },
+  ],
+}
+
+/* Project X: the 45 mm extender pad stacks on the EN-X-3 base only, max 2 pads,
+   raising the reachable height to 340 + 2 × 45 = 430 mm. */
+const PROJECT_X_CATEGORY = 'Project X'
+const PROJECT_X_EXTENDER = { id: 'EN-X-EXT', size: 45, max: 2, baseId: 'EN-X-3', color: '#475569' }
+
+/* Resolve a height (mm) to a base SKU plus the number of extender pads it needs.
+   Returns { id: null } when no product (or extender combo) can reach the height. */
+const resolveProduct = (mm, category) => {
+  const options = pedestalOptions[category] || []
+  const prod = options.find((o) => mm >= o.min && mm <= o.max)
+  if (prod) return { id: prod.id, extenders: 0 }
+  if (category === PROJECT_X_CATEGORY) {
+    const base = options.find((o) => o.id === PROJECT_X_EXTENDER.baseId)
+    if (base && mm > base.max) {
+      const needed = Math.ceil((mm - base.max) / PROJECT_X_EXTENDER.size)
+      if (needed <= PROJECT_X_EXTENDER.max) return { id: base.id, extenders: needed }
+    }
+  }
+  return { id: null, extenders: 0 }
 }
 
 const PALETTE = [
@@ -115,16 +141,18 @@ const QuoteStep = ({
   const canvasContainerRef = useRef(null)
   const [canvasSize, setCanvasSize] = useState({ width: CANVAS_WIDTH, height: CANVAS_HEIGHT })
 
-  const { grouped, idsUsed } = useMemo(() => {
+  const { grouped, idsUsed, extenderCount } = useMemo(() => {
     const g = {}, ids = new Set()
+    let ext = 0
     calcData.pedestals?.forEach((p) => {
       const mm = convertToMm(p.height)
-      const prod = pedestalOptions[selectedCategory].find((o) => mm >= o.min && mm <= o.max)
-      const id = prod ? prod.id : t('calculator.unmatched')
+      const { id: prodId, extenders } = resolveProduct(mm, selectedCategory)
+      const id = prodId || t('calculator.unmatched')
       ids.add(id)
       g[id] = (g[id] || 0) + 1
+      ext += extenders
     })
-    return { grouped: g, idsUsed: [...ids] }
+    return { grouped: g, idsUsed: [...ids], extenderCount: ext }
   }, [calcData.pedestals, selectedCategory])
 
   const colourMap = useMemo(() => makeColourMap(idsUsed), [idsUsed])
@@ -155,8 +183,7 @@ const QuoteStep = ({
   const cmToPx = (val) => val * unitToPixel
   const quotePedestalColor = useMemo(() => (pedestal) => {
     const mm = convertToMm(pedestal.height)
-    const prod = pedestalOptions[selectedCategory].find((o) => mm >= o.min && mm <= o.max)
-    const id = prod ? prod.id : t('calculator.unmatched')
+    const id = resolveProduct(mm, selectedCategory).id || t('calculator.unmatched')
     return colourMap[id] || '#64748B'
   }, [colourMap, selectedCategory, t])
   const quoteFontFamily =
@@ -305,8 +332,7 @@ const QuoteStep = ({
                       ))}
                       {calcData.pedestals?.map((p, i) => {
                         const mm = convertToMm(p.height)
-                        const prod = pedestalOptions[selectedCategory].find((o) => mm >= o.min && mm <= o.max)
-                        const id = prod ? prod.id : t('calculator.unmatched')
+                        const id = resolveProduct(mm, selectedCategory).id || t('calculator.unmatched')
                         const [cx, cy] = Pp([p.x, p.y])
                         return <circle key={i} cx={cx} cy={cy} r={2.5} fill={colourMap[id] || '#64748B'} />
                       })}
@@ -324,6 +350,13 @@ const QuoteStep = ({
                   <span style={{ color: '#64748B' }}>×{qty}</span>
                 </div>
               ))}
+              {extenderCount > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 9 }}>
+                  <span style={{ width: 9, height: 9, borderRadius: 2, backgroundColor: PROJECT_X_EXTENDER.color, display: 'inline-block', flexShrink: 0 }} />
+                  <span style={{ fontWeight: 700, color: '#0F172A' }}>{PROJECT_X_EXTENDER.id}</span>
+                  <span style={{ color: '#64748B' }}>×{extenderCount}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -361,8 +394,18 @@ const QuoteStep = ({
                     </tr>
                   )
                 })}
-                {totalTiles > 0 && (
+                {extenderCount > 0 && (
                   <tr style={{ background: Object.keys(grouped).length % 2 === 0 ? '#fff' : '#F8FAFC' }}>
+                    <td style={{ padding: '8px 10px' }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: PROJECT_X_EXTENDER.color, display: 'inline-block' }} />
+                    </td>
+                    <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0F172A', whiteSpace: 'nowrap' }}>{PROJECT_X_EXTENDER.id}</td>
+                    <td style={{ padding: '8px 10px', color: '#475569' }}>{PROJECT_X_EXTENDER.size} mm</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#0F172A' }}>{extenderCount}</td>
+                  </tr>
+                )}
+                {totalTiles > 0 && (
+                  <tr style={{ background: (Object.keys(grouped).length + (extenderCount > 0 ? 1 : 0)) % 2 === 0 ? '#fff' : '#F8FAFC' }}>
                     <td style={{ padding: '8px 10px' }}>
                       <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: '#94A3B8', display: 'inline-block' }} />
                     </td>
@@ -550,6 +593,29 @@ const QuoteStep = ({
                   </div>
                 )
               })}
+              {extenderCount > 0 && (
+                <div style={{
+                  display: 'flex', alignItems: 'center',
+                  padding: '9px 10px',
+                  background: 'var(--pc-surface-2)',
+                  border: '1px solid var(--pc-line)',
+                  borderRadius: 8,
+                  borderLeft: `4px solid ${PROJECT_X_EXTENDER.color}`,
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--pc-ink)' }}>{PROJECT_X_EXTENDER.id}</div>
+                    <div style={{ fontSize: 10, color: 'var(--pc-ink-3)', marginTop: 1 }}>{PROJECT_X_EXTENDER.size} mm extender pad · EN-X-3 only</div>
+                  </div>
+                  <div style={{
+                    fontSize: 14, fontWeight: 800, color: 'var(--pc-ink)',
+                    background: 'var(--pc-surface)',
+                    border: '1px solid var(--pc-line)',
+                    borderRadius: 20,
+                    padding: '2px 10px',
+                    minWidth: 36, textAlign: 'center',
+                  }}>{extenderCount}</div>
+                </div>
+              )}
               {Object.keys(grouped).length === 0 && (
                 <div style={{ padding: '12px 10px', color: 'var(--pc-ink-3)', fontSize: 12, textAlign: 'center', background: 'var(--pc-surface-2)', border: '1px solid var(--pc-line)', borderRadius: 8 }}>
                   {t('calculator.noPedestalData')}

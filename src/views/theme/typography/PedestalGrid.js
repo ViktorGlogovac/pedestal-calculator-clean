@@ -567,6 +567,9 @@ const PedestalGrid = ({
       // Clear adjusted pedestals
       localStorage.removeItem('pedestal_adjustedPedestals')
       localStorage.removeItem('pedestalHeightAdjuster_adjustedPedestals')
+      // Clear AI depth heights so they aren't re-seeded onto a new drawing
+      localStorage.removeItem('aiDepthPoints')
+      localStorage.removeItem('pedestalHeightAdjuster_dismissedAiAnchors')
       // Clear tile layout data
       localStorage.removeItem('tileLayout_selectedTileType')
       localStorage.removeItem('tileLayout_isOffset')

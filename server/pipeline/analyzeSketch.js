@@ -35,13 +35,14 @@ const WALK_SCHEMA = {
   },
 }
 
-async function analyzeSketch(imagePath, userNotes = '', unitSystem = 'metric') {
+async function analyzeSketch(imagePath, userNotes = '', unitSystem = 'metric', onStream = null) {
   if (!fs.existsSync(imagePath)) throw new Error('Image not found: ' + imagePath)
 
   const response = await callCodexCli({
     imagePath,
     outputSchema: WALK_SCHEMA,
     prompt: buildPrompt(userNotes, unitSystem),
+    onChunk: typeof onStream === 'function' ? onStream : null,
   })
   console.log('[analyzeSketch] codex response:\n', response)
 

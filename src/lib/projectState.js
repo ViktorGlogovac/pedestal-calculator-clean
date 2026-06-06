@@ -15,6 +15,8 @@ const PROJECT_STORAGE_KEYS = [
   'tileGrid_orientation',
   'tileGrid_adjustedPedestals',
   'pedestalHeightAdjuster_adjustedPedestals',
+  'pedestalHeightAdjuster_dismissedAiAnchors',
+  'aiDepthPoints',
 ]
 
 const safeRead = (key) => {

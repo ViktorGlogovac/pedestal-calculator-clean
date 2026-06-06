@@ -21,6 +21,7 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
   const [isDepthDraggingOver, setIsDepthDraggingOver] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [progressEvents, setProgressEvents] = useState([])
+  const [streamText, setStreamText] = useState('')
   const [error, setError] = useState('')
   const [result, setResult] = useState(null)
   const fileInputRef = useRef(null)
@@ -44,6 +45,7 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
     setResult(null)
     setIsAnalyzing(false)
     setProgressEvents([])
+    setStreamText('')
     setActiveStep(0)
     onClose()
   }
@@ -103,6 +105,7 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
     setError('')
     setResult(null)
     setProgressEvents([])
+    setStreamText('')
     if (analyzeWatchdogRef.current) clearTimeout(analyzeWatchdogRef.current)
     analyzeWatchdogRef.current = setTimeout(() => {
       setIsAnalyzing(false)
@@ -117,7 +120,11 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
         depthImageFile || null,
         sketchUnitSystem,
         (event) => {
-          setProgressEvents((prev) => [...prev, event])
+          if (event.type === 'stream') {
+            setStreamText((prev) => prev + (event.delta || ''))
+          } else {
+            setProgressEvents((prev) => [...prev, event])
+          }
         },
       )
 
@@ -273,6 +280,7 @@ const AIDesignImport = ({ visible, onClose, onImport, gridSize = 35, unitSystem 
               {isAnalyzing && (
                 <StageProgress
                   events={progressEvents}
+                  streamText={streamText}
                 />
               )}
 
@@ -832,10 +840,17 @@ const ExampleSketchCard = ({ title, subtitle, variant }) => {
   )
 }
 
-const StageProgress = ({ events }) => {
+const StageProgress = ({ events, streamText }) => {
   const visibleEvents = events.length > 0
     ? events
     : [{ stage: 'start', message: 'Starting analysis', elapsedMs: 0 }]
+
+  const streamRef = useRef(null)
+  const cleanedStream = cleanCodexStream(streamText)
+  useEffect(() => {
+    const el = streamRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [cleanedStream])
 
   return (
     <section
@@ -887,11 +902,62 @@ const StageProgress = ({ events }) => {
           )
         })}
       </div>
+      {cleanedStream && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontWeight: 650, color: 'oklch(36% 0.14 240)', marginBottom: 6, fontSize: 12 }}>
+            Live AI output
+          </div>
+          <pre
+            ref={streamRef}
+            className="pc-mono"
+            style={{
+              margin: 0,
+              maxHeight: 200,
+              overflowY: 'auto',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              fontSize: 11,
+              lineHeight: 1.5,
+              color: 'oklch(40% 0.04 240)',
+              background: 'oklch(99% 0.01 240)',
+              border: '1px solid oklch(88% 0.05 240)',
+              borderRadius: 8,
+              padding: '10px 12px',
+            }}
+          >
+            {cleanedStream}
+            <span className="pc-stream-caret">▋</span>
+          </pre>
+        </div>
+      )}
       <div style={{ color: 'var(--pc-ink-4)', fontSize: 11, marginTop: 10, lineHeight: 1.45 }}>
-        Progress shows pipeline events and model-visible results. Private model reasoning is not displayed.
+        Progress shows pipeline events and the model&rsquo;s streamed output as it reasons through the sketch.
       </div>
     </section>
   )
+}
+
+/**
+ * Trim the noisy session header / metadata that `codex exec` prints before the
+ * actual model output so the live panel shows what Codex is reasoning toward,
+ * not workdir/model/sandbox boilerplate.
+ */
+function cleanCodexStream(raw) {
+  if (!raw) return ''
+  return String(raw)
+    .split('\n')
+    .filter((line) => {
+      const t = line.trim()
+      if (!t) return true
+      if (/^-{3,}$/.test(t)) return false
+      if (/^\[?\d{4}-\d{2}-\d{2}/.test(t)) return false // ISO timestamp lines
+      if (/^(workdir|model|provider|approval|sandbox|reasoning effort|reasoning summaries|tokens used|OpenAI Codex)\b/i.test(t)) return false
+      if (/^User instructions:?$/i.test(t)) return false
+      return true
+    })
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimStart()
 }
 
 function formatElapsed(elapsedMs) {
@@ -1338,6 +1404,18 @@ const exampleGuideStyles = `
     72% { offset-distance: 100%; opacity: 1; }
     80%, 100% { offset-distance: 100%; opacity: 0; }
   }
+
+  .pc-stream-caret {
+    display: inline-block;
+    margin-left: 1px;
+    color: var(--pc-accent);
+    animation: pc-stream-blink 1s steps(2, start) infinite;
+  }
+
+  @keyframes pc-stream-blink {
+    0%, 50% { opacity: 1; }
+    50.01%, 100% { opacity: 0; }
+  }
 `
 
 DropZone.propTypes = {
@@ -1404,6 +1482,7 @@ StageProgress.propTypes = {
       elapsedMs: PropTypes.number,
     }),
   ).isRequired,
+  streamText: PropTypes.string,
 }
 
 ResultDetails.propTypes = {

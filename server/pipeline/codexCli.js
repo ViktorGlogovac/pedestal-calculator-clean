@@ -49,7 +49,7 @@ function ensureCodexAuth() {
   }
 }
 
-function callCodexCli({ prompt, imagePath = null, outputSchema = null, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+function callCodexCli({ prompt, imagePath = null, outputSchema = null, timeoutMs = DEFAULT_TIMEOUT_MS, onChunk = null }) {
   return new Promise((resolve, reject) => {
     const apiKey = resolveOpenAiApiKey()
     if (!apiKey) {
@@ -112,7 +112,11 @@ function callCodexCli({ prompt, imagePath = null, outputSchema = null, timeoutMs
     }, timeoutMs)
 
     child.stdout.on('data', chunk => {
-      stdout += chunk.toString()
+      const text = chunk.toString()
+      stdout += text
+      if (typeof onChunk === 'function') {
+        try { onChunk(text) } catch (_) { /* never let a stream consumer break the run */ }
+      }
     })
     child.stderr.on('data', chunk => {
       stderr += chunk.toString()

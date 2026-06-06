@@ -58,6 +58,15 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
       elapsedMs: Date.now() - startedAt,
     }) + '\n')
   }
+  const streamText = (stage, delta) => {
+    if (!isStreaming || res.writableEnded || !delta) return
+    res.write(JSON.stringify({
+      type: 'stream',
+      stage,
+      delta: String(delta),
+      elapsedMs: Date.now() - startedAt,
+    }) + '\n')
+  }
   const finishError = (status, payload) => {
     if (!isStreaming) return res.status(status).json(payload)
     res.write(JSON.stringify({
@@ -131,7 +140,7 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
   let codexResult = null
   try {
     progress('outline-ai', 'AI is reading the outer perimeter and edge dimensions', { unitSystem })
-    codexResult = await analyzeSketch(originalPath, userNotes, unitSystem)
+    codexResult = await analyzeSketch(originalPath, userNotes, unitSystem, (delta) => streamText('outline-ai', delta))
     progress('outline-ai', 'AI returned a closed outline', {
       corners: codexResult.outerBoundary.length,
       segments: codexResult.segments.length,

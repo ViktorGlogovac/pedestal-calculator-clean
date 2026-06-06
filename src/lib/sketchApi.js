@@ -156,7 +156,7 @@ async function readStreamingAnalysisResponse(response, onProgress) {
       return
     }
 
-    if (event.type === 'progress') {
+    if (event.type === 'progress' || event.type === 'stream') {
       onProgress?.(event)
     } else if (event.type === 'complete' || event.type === 'error') {
       finalEvent = event

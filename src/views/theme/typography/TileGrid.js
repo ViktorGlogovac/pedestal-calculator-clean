@@ -261,7 +261,14 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
       ;[tileWidthCm, tileHeightCm] = [tileHeightCm, tileWidthCm]
     }
 
-    const pedestalStepCm = Math.min(tileWidthCm, tileHeightCm)
+    // Pedestal on every tile corner plus each edge split into equal segments of
+    // at most ~60 cm (24 in), per the official slab-size placement chart. Only
+    // FULL tiles get the mid-edge support; any cut/offset piece = corners only.
+    const spacingCm = unitSystem === 'imperial' ? 60.96 : 60
+    const subdivideTilePiece = (px, py, w, h) => {
+      const isFullTile = w >= tileWidthCm - EPSILON && h >= tileHeightCm - EPSILON
+      return subdivideTileRect(px, py, w, h, isFullTile ? spacingCm : Infinity)
+    }
     const xs = controlPoints.map((p) => p.x)
     const ys = controlPoints.map((p) => p.y)
     const minX = Math.min(...xs)
@@ -309,7 +316,7 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
         const curTileH = Math.min(tileHeightCm, maxY - y)
         if (curTileW <= 0 || curTileH <= 0) continue
 
-        const subRects = subdivideTileRect(x, y, curTileW, curTileH, pedestalStepCm)
+        const subRects = subdivideTilePiece(x, y, curTileW, curTileH)
         const mergedSubRectShape = []
 
         subRects.forEach((subRect) => {

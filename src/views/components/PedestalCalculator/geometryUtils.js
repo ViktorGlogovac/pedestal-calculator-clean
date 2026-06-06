@@ -12,31 +12,32 @@ export function polygonSignedArea(points) {
   return area / 2
 }
 
-// 2. Subdivide a rectangle into 60×60 sub-tiles (or any step)
-export function subdivideTileRect(x, y, w, h, step = 60) {
+// 2. Subdivide a rectangle so no sub-tile edge exceeds the per-axis max step.
+// Each axis is split into the fewest EQUAL segments whose length is <= its
+// max step, so pedestals land on every tile corner plus evenly-spaced interior
+// points on edges longer than the max. Pass `Infinity` for an axis to keep it
+// at corners only (used so only a tile's longer side gets intermediate points).
+export function subdivideTileRect(x, y, w, h, maxStepX = 60, maxStepY = maxStepX) {
   const polygons = []
-  const endX = x + w
-  const endY = y + h
+  const cols = Math.max(1, Math.ceil(w / maxStepX - EPSILON))
+  const rows = Math.max(1, Math.ceil(h / maxStepY - EPSILON))
+  const stepX = w / cols
+  const stepY = h / rows
 
-  let rowY = y
-  while (rowY < endY - EPSILON) {
-    const subH = Math.min(step, endY - rowY)
-    let colX = x
-    while (colX < endX - EPSILON) {
-      const subW = Math.min(step, endX - colX)
-      const subTile = [
+  for (let r = 0; r < rows; r++) {
+    const rowY = y + r * stepY
+    for (let c = 0; c < cols; c++) {
+      const colX = x + c * stepX
+      polygons.push([
         [
           [colX, rowY],
-          [colX + subW, rowY],
-          [colX + subW, rowY + subH],
-          [colX, rowY + subH],
+          [colX + stepX, rowY],
+          [colX + stepX, rowY + stepY],
+          [colX, rowY + stepY],
           [colX, rowY],
         ],
-      ]
-      polygons.push(subTile)
-      colX += step
+      ])
     }
-    rowY += step
   }
   return polygons
 }
