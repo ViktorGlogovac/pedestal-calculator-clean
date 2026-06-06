@@ -335,17 +335,31 @@ const TileLayout = ({
     }
 
     // Pedestal placement per the official slab-size chart: a pedestal on every
-    // tile corner, plus each edge is split into equal segments of at most
-    // ~60 cm (24 in). So <=60 cm edges stay at corners and a 120 cm edge gets
-    // one extra mid-row at 60 cm — e.g. a 60x120 tile yields the same uniform
-    // 60 cm pedestal grid as a 60x60 tile.
+    // tile corner, plus intermediate points on long edges. Most full slabs use
+    // ~60 cm (24 in) spacing; narrow 30x120 / 12x48 slabs use thirds only for
+    // 1/3 offset; 1/2 offset keeps the standard center support.
     const spacingCm = unitSystem === 'imperial' ? 60.96 : 60
-    // Only a FULL tile gets the mid-edge support. Any piece cut by the boundary
-    // or an offset (smaller than the full tile in either dimension) gets corners
-    // only — passing Infinity keeps an axis at a single segment (corners).
+    // Most cut pieces get corners only. For 30x120 / 12x48 pieces, keep the
+    // long-edge support rule on boundary rows because those intersections still
+    // need pedestals where the staggered tile seams land.
     const subdivideTilePiece = (px, py, w, h) => {
       const isFullTile = w >= tileWidthCm - EPSILON && h >= tileHeightCm - EPSILON
-      return subdivideTileRect(px, py, w, h, isFullTile ? spacingCm : Infinity)
+      if (selectedTileTypeState.id === 'tile30-120') {
+        const longEdgeStep =
+          isOffsetState === 'third' ? Math.max(tileWidthCm, tileHeightCm) / 3 : spacingCm
+        return subdivideTileRect(
+          px,
+          py,
+          tileWidthCm > tileHeightCm ? tileWidthCm : w,
+          tileHeightCm > tileWidthCm ? tileHeightCm : h,
+          tileWidthCm > tileHeightCm ? longEdgeStep : Infinity,
+          tileHeightCm > tileWidthCm ? longEdgeStep : Infinity,
+        )
+      }
+
+      if (!isFullTile) return subdivideTileRect(px, py, w, h, Infinity)
+
+      return subdivideTileRect(px, py, w, h, spacingCm)
     }
     const xs = controlPoints.map((p) => p.x)
     const ys = controlPoints.map((p) => p.y)

@@ -261,13 +261,28 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
       ;[tileWidthCm, tileHeightCm] = [tileHeightCm, tileWidthCm]
     }
 
-    // Pedestal on every tile corner plus each edge split into equal segments of
-    // at most ~60 cm (24 in), per the official slab-size placement chart. Only
-    // FULL tiles get the mid-edge support; any cut/offset piece = corners only.
+    // Pedestal on every tile corner plus intermediate points on long edges.
+    // Most full slabs use ~60 cm (24 in) spacing; narrow 30x120 / 12x48 slabs
+    // use thirds only for 1/3 offset; 1/2 offset keeps the standard center support.
     const spacingCm = unitSystem === 'imperial' ? 60.96 : 60
     const subdivideTilePiece = (px, py, w, h) => {
       const isFullTile = w >= tileWidthCm - EPSILON && h >= tileHeightCm - EPSILON
-      return subdivideTileRect(px, py, w, h, isFullTile ? spacingCm : Infinity)
+      if (selectedTileTypeState.id === 'tile30-120') {
+        const longEdgeStep =
+          isOffsetState === 'third' ? Math.max(tileWidthCm, tileHeightCm) / 3 : spacingCm
+        return subdivideTileRect(
+          px,
+          py,
+          tileWidthCm > tileHeightCm ? tileWidthCm : w,
+          tileHeightCm > tileWidthCm ? tileHeightCm : h,
+          tileWidthCm > tileHeightCm ? longEdgeStep : Infinity,
+          tileHeightCm > tileWidthCm ? longEdgeStep : Infinity,
+        )
+      }
+
+      if (!isFullTile) return subdivideTileRect(px, py, w, h, Infinity)
+
+      return subdivideTileRect(px, py, w, h, spacingCm)
     }
     const xs = controlPoints.map((p) => p.x)
     const ys = controlPoints.map((p) => p.y)
@@ -298,7 +313,7 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
         (selectedTileTypeState.id === 'tile60-120' || selectedTileTypeState.id === 'tile30-120')
       ) {
         // True 1/3 offset: 0, 1/3, 2/3, repeat
-        offsetX = (rowNum % 2) * (tileWidthCm / 2)
+        offsetX = (rowNum % 3) * (tileWidthCm / 3)
       } else if (
         isOffsetState === 'half' &&
         (selectedTileTypeState.id === 'tile60-120' || selectedTileTypeState.id === 'tile30-120')

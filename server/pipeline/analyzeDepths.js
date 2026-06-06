@@ -81,6 +81,8 @@ async function analyzeDepths(imagePath, deckPolygon, deckUnit, { isMainSketch = 
       : 'This image is a dedicated pedestal-height markup sheet — not the main perimeter-dimension drawing.\n'
     ) +
     `Repeated handwritten values like ${exampleValues} written across the deck interior or along the deck perimeter are valid pedestal heights and MUST be extracted.\n` +
+    'Interior drain labels are often written as plain numbers inside the deck, such as 70 or 80, sometimes without the word "drain", a circle, or a leader line. Treat every clear standalone interior numeric value as a drain/height point unless it is clearly a span dimension.\n' +
+    'There may be MULTIPLE drains or interior height points in one drawing. You must find and return every distinct one; do not stop after the most obvious drain.\n' +
     'Do not discard a value just because it is repeated many times.\n' +
     'Only ignore labels that are clearly span/length dimensions with dimension lines, arrows, or long outside-the-deck measurement callouts.\n' +
     'Output only valid JSON.'
@@ -103,6 +105,8 @@ async function analyzeDepths(imagePath, deckPolygon, deckUnit, { isMainSketch = 
     '- If the annotation is at/near a vertex listed above, use that vertex\'s EXACT x and y.\n' +
     '- If a height annotation is written on or just outside the perimeter edge, assign it to the nearest deck vertex/corner unless it is clearly marking an interior drain or mid-deck point. Do NOT return a free-floating coordinate along the edge for perimeter corner-height drawings.\n' +
     '- If the annotation is in the interior (drain, mid-deck mark), estimate its position as accurately as possible.\n' +
+    '- For interior drain/height annotations, include every clear standalone value even if it is not labelled with the word "drain". For example, if both 70 and 80 appear inside the deck, return BOTH as separate depth points.\n' +
+    '- Do not choose only the largest, lowest, clearest, or rightmost drain value. Return all visible drain/height values.\n' +
     '- value: numeric depth/height number only.\n' +
     `- unit: use exactly the unit written next to the number when one IS written ("mm", "cm", "m", "in", inch marks " = in, apostrophe ' = ft). If a number has NO unit written next to it, set unit = "${defaultDepthUnit}" — the default depth unit for the user-selected system. In metric projects, bare depth/height numbers are millimeters unless the image explicitly says otherwise. Do NOT assume inches or centimeters for bare metric depth values.\n` +
     '- description: brief label (e.g. "top-right corner", "drain at centre", "bottom-left step").\n' +

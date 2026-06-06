@@ -289,6 +289,8 @@ function CanvasArea(props) {
     activeShapeIndex,
     zoom,
     drawingPaused,
+    width,
+    height,
   ])
 
   // Add wheel event listener with passive: false to allow preventDefault
