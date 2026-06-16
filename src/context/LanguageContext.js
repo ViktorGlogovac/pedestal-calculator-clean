@@ -46,7 +46,7 @@ const translations = {
       enterEmailPassword: 'Enter your email and password.',
       enterAccountPassword: 'Enter an email and password.',
       passwordsMismatch: 'Passwords do not match.',
-      accountCreated: 'Account created. Check your email if confirmation is enabled in Supabase.',
+      accountCreated: 'Account created. Please check your email to confirm your account.',
     },
     common: {
       loading: 'Loading...',
@@ -240,7 +240,7 @@ const translations = {
       enterEmailPassword: '请输入邮箱和密码。',
       enterAccountPassword: '请输入邮箱和密码。',
       passwordsMismatch: '两次输入的密码不一致。',
-      accountCreated: '账户已创建。如果 Supabase 启用了确认邮件，请检查你的邮箱。',
+      accountCreated: '账户已创建。请查收邮件以确认您的账户。',
     },
     common: {
       loading: '加载中...',

@@ -22,11 +22,6 @@ function SidePanel(props) {
     canUndo,
     canRedo,
     onShowInstructions,
-    overlayImage,
-    overlayOpacity,
-    onOverlayUpload,
-    onOverlayOpacityChange,
-    onOverlayClear,
   } = props
 
   return (
@@ -192,40 +187,6 @@ function SidePanel(props) {
         </div>
       </PanelSection>
 
-      <PanelSection title={t('calculator.referenceImage')}>
-        {!overlayImage ? (
-          <button className="pc-btn" type="button" onClick={onOverlayUpload} style={{ width: '100%', justifyContent: 'center' }}>
-            {t('calculator.uploadImage')}
-          </button>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: 'var(--pc-ink-3)' }}>{t('calculator.opacity')}</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pc-ink)' }}>
-                {Math.round(overlayOpacity * 100)}%
-              </span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value={overlayOpacity}
-              onChange={(e) => onOverlayOpacityChange(parseFloat(e.target.value))}
-              style={{ width: '100%', accentColor: 'var(--pc-accent, #2563EB)' }}
-            />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-              <button className="pc-btn" type="button" onClick={onOverlayUpload}>
-                {t('calculator.replace')}
-              </button>
-              <button className="pc-btn ghost" type="button" style={{ color: 'var(--pc-danger)' }} onClick={onOverlayClear}>
-                {t('calculator.remove')}
-              </button>
-            </div>
-          </div>
-        )}
-      </PanelSection>
-
       <PanelSection title={t('calculator.shortcuts')}>
         <div
           style={{
@@ -286,11 +247,6 @@ SidePanel.propTypes = {
   canUndo: PropTypes.bool.isRequired,
   canRedo: PropTypes.bool.isRequired,
   onShowInstructions: PropTypes.func,
-  overlayImage: PropTypes.string,
-  overlayOpacity: PropTypes.number,
-  onOverlayUpload: PropTypes.func,
-  onOverlayOpacityChange: PropTypes.func,
-  onOverlayClear: PropTypes.func,
 }
 
 PanelSection.propTypes = {

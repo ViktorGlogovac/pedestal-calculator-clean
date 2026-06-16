@@ -76,7 +76,17 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem(GUEST_STORAGE_KEY)
         setIsGuest(false)
         if (!supabase) return { error: null }
-        return supabase.auth.signOut()
+        // Use local scope so the client session is cleared without a global
+        // revocation call. A global logout hits /auth/v1/logout?scope=global,
+        // which returns 403 when the refresh token is already stale/expired,
+        // leaving the user stuck signed in. Local scope just clears the
+        // persisted session so logout always succeeds client-side.
+        try {
+          await supabase.auth.signOut({ scope: 'local' })
+        } catch (e) {
+          // ignore — the local session is removed regardless
+        }
+        return { error: null }
       },
     }),
     [isGuest, loading, session, user],
