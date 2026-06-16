@@ -343,7 +343,6 @@ const TileLayout = ({
     // long-edge support rule on boundary rows because those intersections still
     // need pedestals where the staggered tile seams land.
     const subdivideTilePiece = (px, py, w, h) => {
-      const isFullTile = w >= tileWidthCm - EPSILON && h >= tileHeightCm - EPSILON
       if (selectedTileTypeState.id === 'tile30-120') {
         const longEdgeStep =
           isOffsetState === 'third' ? Math.max(tileWidthCm, tileHeightCm) / 3 : spacingCm
@@ -357,9 +356,23 @@ const TileLayout = ({
         )
       }
 
-      if (!isFullTile) return subdivideTileRect(px, py, w, h, Infinity)
-
-      return subdivideTileRect(px, py, w, h, spacingCm)
+      // A long edge needs a mid-span pedestal whenever that edge still spans the
+      // tile's full dimension — even on pieces cut on the other axis. Treating a
+      // tile as "full" only when BOTH axes are full dropped a piece that is still
+      // a complete 120 cm long edge (e.g. a short bottom-row tile) to corners
+      // only, losing the center support on its 120 cm side. Decide each axis
+      // independently: a full-length axis gets the standard spacing, a cut axis
+      // stays at corners only.
+      const fullWidth = w >= tileWidthCm - EPSILON
+      const fullHeight = h >= tileHeightCm - EPSILON
+      return subdivideTileRect(
+        px,
+        py,
+        w,
+        h,
+        fullWidth ? spacingCm : Infinity,
+        fullHeight ? spacingCm : Infinity,
+      )
     }
     const xs = controlPoints.map((p) => p.x)
     const ys = controlPoints.map((p) => p.y)
