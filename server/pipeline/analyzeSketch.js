@@ -19,10 +19,14 @@ const WALK_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['dir', 'dist', 'source', 'label'],
+        required: ['dir', 'dist', 'dx', 'dy', 'source', 'label'],
         properties: {
-          dir: { type: 'string', enum: ['RIGHT', 'LEFT', 'UP', 'DOWN'] },
+          dir: { type: 'string', enum: ['RIGHT', 'LEFT', 'UP', 'DOWN', 'DIAGONAL'] },
           dist: { type: 'number' },
+          // Signed deltas, only meaningful for DIAGONAL: dx>0 right / <0 left,
+          // dy>0 down / <0 up. Orthogonal moves set both to 0 (dist is used).
+          dx: { type: 'number' },
+          dy: { type: 'number' },
           source: { type: 'string' },
           label: { type: 'string' },
         },
@@ -85,16 +89,27 @@ function buildPrompt(userNotes, unitSystem) {
 Task:
 - Trace only the dark outer perimeter.
 - Ignore ruled notebook paper lines, text boxes, arrows, and visual noise.
-- Treat the shape as rectilinear: only RIGHT, DOWN, LEFT, UP moves.
+- Most edges are rectilinear: RIGHT, DOWN, LEFT, UP moves.
+- ANGLED / SLOPED walls are allowed and must be preserved. A wall drawn at an angle
+  (a chamfered or 45-degree cut corner, often labeled with a slanted length such as "√2")
+  is a SINGLE "DIAGONAL" move — do NOT break it into separate RIGHT + DOWN rectilinear steps.
+  A √2 edge is ONE diagonal, not "DOWN 1 then RIGHT 1". Staircasing a sloped wall is WRONG.
 - Start at the top-left outer corner of the shape and walk clockwise.
 - Follow the visible dark outline exactly. Every move must lie on a drawn boundary edge.
 - Do not cross empty gaps to connect separate horizontal levels. If a horizontal segment is lower than the previous one, include the vertical DOWN step between them.
 - Use visible labels for edge distances.
 - A dimension label belongs to the edge it is drawn beside. A bottom label is not a top label.
 - If a required edge is unlabeled, infer the shortest value that makes the polygon close and set "source": "inferred".
-- The walk must close exactly: total RIGHT must equal total LEFT, and total DOWN must equal total UP.
+- Every step MUST include "dx" and "dy":
+    - For RIGHT/LEFT/UP/DOWN set dx=0 and dy=0 ("dist" carries the length).
+    - For DIAGONAL set dx = horizontal change (right positive, left negative) and
+      dy = vertical change (down positive, up negative), and set "dist" to the wall's
+      labeled length (or the straight-line length if unlabeled).
+- The walk must close exactly: total horizontal change (RIGHT minus LEFT, plus each diagonal dx)
+  must be 0, and total vertical change (DOWN minus UP, plus each diagonal dy) must be 0.
 - If two sides look similar, do not mirror one side onto the other. Preserve asymmetry from the drawing.
-- Do not run OCR-style overthinking. Do not invent extra steps. Do not create diagonals.
+- Do not run OCR-style overthinking. Do not invent extra steps. Do not turn a straight rectilinear
+  wall into a diagonal — only use DIAGONAL for a wall that is genuinely drawn at an angle.
 - ${unitInstruction}
 - Return JSON only.
 
@@ -102,9 +117,10 @@ Output exactly:
 {
   "unit": "m",
   "walk": [
-    { "dir": "RIGHT", "dist": 10, "source": "label", "label": "10m" },
-    { "dir": "DOWN", "dist": 3, "source": "label", "label": "3m" },
-    { "dir": "RIGHT", "dist": 5, "source": "inferred", "label": "" }
+    { "dir": "RIGHT", "dist": 10, "dx": 0, "dy": 0, "source": "label", "label": "10m" },
+    { "dir": "DIAGONAL", "dist": 1.41, "dx": 1, "dy": 1, "source": "label", "label": "√2m" },
+    { "dir": "DOWN", "dist": 8, "dx": 0, "dy": 0, "source": "label", "label": "8m" },
+    { "dir": "RIGHT", "dist": 5, "dx": 0, "dy": 0, "source": "inferred", "label": "" }
   ],
   "warnings": ["short human-readable warning for inferred/missing dimensions"]
 }
@@ -124,24 +140,38 @@ function normalizeWalk(walk) {
 
   for (const step of walk || []) {
     const dir = String(step.dir || '').toUpperCase().trim()
+    const source = String(step.source || 'label').toLowerCase() === 'inferred' ? 'inferred' : 'label'
+    const label = String(step.label || '').trim()
+
+    if (dir === 'DIAGONAL') {
+      const dx = parseFloat(step.dx)
+      const dy = parseFloat(step.dy)
+      if (Number.isNaN(dx) || Number.isNaN(dy) || (Math.abs(dx) < 0.0001 && Math.abs(dy) < 0.0001)) {
+        continue
+      }
+      cleaned.push({
+        dir,
+        dx: +dx.toFixed(4),
+        dy: +dy.toFixed(4),
+        dist: +Math.hypot(dx, dy).toFixed(4),
+        source,
+        label,
+      })
+      continue
+    }
+
     const dist = parseFloat(step.dist ?? step.distance ?? step.length)
     if (!['RIGHT', 'LEFT', 'UP', 'DOWN'].includes(dir) || Number.isNaN(dist) || dist <= 0) {
       continue
     }
 
-    const normalizedStep = {
-      dir,
-      dist: +dist.toFixed(4),
-      source: String(step.source || 'label').toLowerCase() === 'inferred' ? 'inferred' : 'label',
-      label: String(step.label || '').trim(),
-    }
-    cleaned.push(normalizedStep)
+    cleaned.push({ dir, dist: +dist.toFixed(4), dx: 0, dy: 0, source, label })
   }
 
   let merged = mergeConsecutiveSameDirection(cleaned)
-  const totals = walkTotals(merged)
-  const closeX = +(-(totals.right - totals.left)).toFixed(4)
-  const closeY = +(-(totals.down - totals.up)).toFixed(4)
+  const net = walkNet(merged)
+  const closeX = +(-net.x).toFixed(4)
+  const closeY = +(-net.y).toFixed(4)
 
   if (Math.abs(closeX) > 0.01) {
     merged.push({
@@ -164,7 +194,7 @@ function normalizeWalk(walk) {
   if (Math.abs(closeX) > 0.01 || Math.abs(closeY) > 0.01) {
     warnings.push(
       `Codex returned an open walk; appended inferred orthogonal closure ` +
-      `(dx=${closeX.toFixed(2)}, dy=${closeY.toFixed(2)}) to prevent a diagonal canvas edge.`
+      `(dx=${closeX.toFixed(2)}, dy=${closeY.toFixed(2)}).`
     )
   }
 
@@ -177,7 +207,9 @@ function mergeConsecutiveSameDirection(walk) {
 
   for (const step of walk || []) {
     const previous = merged[merged.length - 1]
-    if (previous && previous.dir === step.dir) {
+    // Only merge consecutive identical ORTHOGONAL moves. Diagonals are kept as
+    // distinct edges (two angled walls should never collapse into one).
+    if (previous && previous.dir === step.dir && step.dir !== 'DIAGONAL') {
       const bothLabeled = previous.source === 'label' && step.source === 'label'
       previous.dist = +(previous.dist + step.dist).toFixed(4)
       previous.source = bothLabeled ? 'label' : 'inferred'
@@ -192,14 +224,32 @@ function mergeConsecutiveSameDirection(walk) {
   return merged
 }
 
-function walkTotals(walk) {
-  return (walk || []).reduce((totals, step) => {
-    if (step.dir === 'RIGHT') totals.right += step.dist
-    else if (step.dir === 'LEFT') totals.left += step.dist
-    else if (step.dir === 'DOWN') totals.down += step.dist
-    else if (step.dir === 'UP') totals.up += step.dist
-    return totals
-  }, { right: 0, left: 0, down: 0, up: 0 })
+// Signed (dx, dy) displacement of a single walk step. DIAGONAL carries its own
+// dx/dy; orthogonal moves derive it from dir + dist.
+function stepDelta(step) {
+  const dir = String(step.dir || '').toUpperCase().trim()
+  if (dir === 'DIAGONAL') {
+    const dx = parseFloat(step.dx)
+    const dy = parseFloat(step.dy)
+    return { dx: Number.isNaN(dx) ? 0 : dx, dy: Number.isNaN(dy) ? 0 : dy }
+  }
+  const dist = parseFloat(step.dist ?? step.distance ?? step.length)
+  if (Number.isNaN(dist) || dist <= 0) return { dx: 0, dy: 0 }
+  if (dir === 'RIGHT') return { dx: dist, dy: 0 }
+  if (dir === 'LEFT') return { dx: -dist, dy: 0 }
+  if (dir === 'DOWN') return { dx: 0, dy: dist }
+  if (dir === 'UP') return { dx: 0, dy: -dist }
+  return { dx: 0, dy: 0 }
+}
+
+// Net displacement of the whole walk (0,0 when it closes perfectly).
+function walkNet(walk) {
+  return (walk || []).reduce((net, step) => {
+    const { dx, dy } = stepDelta(step)
+    net.x += dx
+    net.y += dy
+    return net
+  }, { x: 0, y: 0 })
 }
 
 function walkToPolygon(walk) {
@@ -210,16 +260,10 @@ function walkToPolygon(walk) {
   const pts = [{ x: 0, y: 0 }]
 
   for (const step of walk) {
-    const dir = String(step.dir || '').toUpperCase().trim()
-    const dist = parseFloat(step.dist ?? step.distance ?? step.length)
-    if (Number.isNaN(dist) || dist <= 0) continue
-
-    if (dir === 'RIGHT') x += dist
-    else if (dir === 'LEFT') x -= dist
-    else if (dir === 'DOWN') y += dist
-    else if (dir === 'UP') y -= dist
-    else continue
-
+    const { dx, dy } = stepDelta(step)
+    if (dx === 0 && dy === 0) continue
+    x += dx
+    y += dy
     pts.push({ x: +x.toFixed(4), y: +y.toFixed(4) })
   }
 

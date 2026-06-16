@@ -1336,8 +1336,8 @@ function orthogonalizeMostlyAxisAlignedPoints(points, warnings, source = 'geomet
 
   if (rejectedDiagonalCount > 0) {
     warnings.push(
-      `${source}: detected ${rejectedDiagonalCount} strongly diagonal edge(s). ` +
-      'This sketch cannot be represented reliably as an orthogonal deck without manual correction.'
+      `${source}: kept ${rejectedDiagonalCount} angled edge(s) as drawn. ` +
+      'Verify the angled wall(s) and adjust corner positions if the angle looks off.'
     )
   }
 

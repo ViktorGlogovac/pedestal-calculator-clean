@@ -53,13 +53,20 @@ async function extractShapeVision(imagePath, userNotes = '', ocrItems = []) {
         '   - A label sitting near the TOP or BOTTOM of the image (image-y < 0.20 or > 0.80) measures a HORIZONTAL width.\n' +
         '   - The largest vertical label is the overall HEIGHT of the deck. The largest horizontal label is the overall WIDTH.\n' +
         '   - If the deck is taller than wide, the first segment in your clockwise walk should be a short HORIZONTAL (the width), not the long vertical.\n' +
-        '5. List each segment as: RIGHT/LEFT/UP/DOWN <distance> <unit> (e.g. "RIGHT 5 m").\n' +
+        '5. List each STRAIGHT horizontal/vertical segment as: RIGHT/LEFT/UP/DOWN <distance> <unit> (e.g. "RIGHT 5 m").\n' +
+        '   ANGLED / SLOPED / DIAGONAL walls ARE allowed and common (chamfered or 45° cut corners).\n' +
+        '   Write an angled wall as a SINGLE move: DIAGONAL <RIGHT|LEFT> <run> <UP|DOWN> <rise> <unit>\n' +
+        '   (e.g. "DIAGONAL RIGHT 2 DOWN 3 m" = one straight edge moving right 2 AND down 3 together).\n' +
+        '   A wall labeled with a slanted length such as √2, or any edge drawn at an angle, MUST be a DIAGONAL.\n' +
+        '   NEVER break a sloped wall into separate RIGHT + DOWN rectilinear steps — a √2 edge is ONE DIAGONAL,\n' +
+        '   not "DOWN 1 then RIGHT 1". Breaking an angled wall into a staircase is WRONG.\n' +
         '6. Preserve units exactly as written. Do NOT convert units.\n' +
         '7. Start at the top-left outer corner of the DECK (not the page) and walk clockwise.\n' +
         '8. Trace EVERY corner faithfully — notches, steps, and cutouts are real architectural features even if they are small (e.g. 1m on a 20m deck).\n' +
         '   Only combine consecutive steps if they are clearly the same direction due to a shaky hand (e.g. RIGHT 0.05m RIGHT 0.03m).\n' +
         '   Do NOT combine a RIGHT then DOWN then RIGHT into a single RIGHT — that is a notch.\n' +
-        '9. Do NOT create diagonal edges for a rectilinear deck. If a photographed vertical side is slightly slanted, output it as UP/DOWN, not as a diagonal.\n' +
+        '9. Only use DIAGONAL for a wall that is clearly drawn at an angle (e.g. a 45° cut corner). ' +
+        'If a side is meant to be straight but looks slightly slanted from the photo or a shaky hand, output it as RIGHT/LEFT/UP/DOWN, not as a diagonal.\n' +
         (userNotes ? `User notes: "${userNotes}"\n` : ''),
     },
     {
@@ -73,7 +80,9 @@ async function extractShapeVision(imagePath, userNotes = '', ocrItems = []) {
             'State: "ORIENTATION: deck is [TALLER/WIDER]. Height = X m, Width = Y m."\n\n' +
             'Step 2 — Trace the perimeter clockwise from the top-left corner of the deck.\n' +
             'Output one segment per line. Trace ALL corners — complex shapes with notches may need 10-20 segments.\n' +
-            'Do NOT skip notch corners to keep the count low.\n\n' +
+            'Do NOT skip notch corners to keep the count low.\n' +
+            'If a wall is drawn at an angle (sloped/chamfered, e.g. labeled √2), output it as ONE\n' +
+            '"DIAGONAL <RIGHT|LEFT> <run> <UP|DOWN> <rise> <unit>" line. Do NOT split it into rectilinear RIGHT/DOWN steps.\n\n' +
             'OCR hints (image coords range 0..1, likely= inferred direction):\n' +
             `${ocrHintText}\n\n` +
             'After the walk, list uncertain dimensions under "UNCERTAIN:".',
@@ -106,7 +115,9 @@ async function extractShapeVision(imagePath, userNotes = '', ocrItems = []) {
         content:
           'Convert this perimeter walk into a JSON polygon. ' +
           'RIGHT increases x, DOWN increases y, origin (0,0) at top-left. ' +
-          'Preserve EVERY corner — do NOT simplify or reduce. ' +
+          'A line "DIAGONAL <RIGHT|LEFT> <run> <UP|DOWN> <rise> <unit>" is ONE angled edge: ' +
+          'apply both deltas at once (e.g. DIAGONAL RIGHT 2 DOWN 3 → x+=2, y+=3 in a single step). ' +
+          'Preserve EVERY corner and keep angled edges angled — do NOT simplify, reduce, or split a diagonal into steps. ' +
           'Output JSON only: {"unit":"m","outerBoundary":[{"x":0,"y":0},...]}',
       },
       {
@@ -207,34 +218,53 @@ function parseWalkToPolygon(walkText) {
   const segments = []
   let unit = null
 
+  // Detect a unit token; returns 'm' | 'ft' | null.
+  const detectUnit = (rawUnit) => {
+    const u = (rawUnit || '').toLowerCase().replace(/\s/g, '')
+    if (u.startsWith('m')) return 'm'
+    if (u === 'ft' || u === 'feet' || u === "'") return 'ft'
+    return null
+  }
+
+  // Parse a distance token — handles feet-inch "31'6"", feet-only "31'" and
+  // plain decimals. Returns { value, unit } where unit is inferred or null.
+  const parseValue = (rawDist) => {
+    const d = String(rawDist).trim()
+    const feetInchMatch = d.match(/^(\d+)'\s*(\d+)"?$/)
+    const feetOnlyMatch = d.match(/^(\d+)'$/)
+    if (feetInchMatch) return { value: parseInt(feetInchMatch[1]) + parseInt(feetInchMatch[2]) / 12, unit: 'ft' }
+    if (feetOnlyMatch) return { value: parseFloat(feetOnlyMatch[1]), unit: 'ft' }
+    return { value: parseFloat(d), unit: null }
+  }
+
+  // A genuinely angled edge: "DIAGONAL RIGHT 2 DOWN 3 m" — moves on both axes
+  // in a single straight edge. Tried first so the plain-direction matcher does
+  // not consume the leading "RIGHT 2" of a diagonal line.
+  const diagRe = /\bDIAG(?:ONAL)?\s+(RIGHT|LEFT)\s+(\d+(?:['.]\s*\d+"?)?(?:\.\d+)?)\s+(UP|DOWN)\s+(\d+(?:['.]\s*\d+"?)?(?:\.\d+)?)\s*(m(?:eters?)?|ft|feet|['"])?/i
+  const orthoRe = /\b(RIGHT|LEFT|UP|DOWN)\s+([\d]+(?:['.]\s*[\d]+"?)?(?:\.\d+)?)\s*(m(?:eters?)?|ft|feet|['"])?/i
+
   for (const line of lines) {
+    const dm = line.match(diagRe)
+    if (dm) {
+      const run = parseValue(dm[2])
+      const rise = parseValue(dm[4])
+      if (!unit) unit = detectUnit(dm[5]) || run.unit || rise.unit
+      if (isNaN(run.value) || isNaN(rise.value) || run.value <= 0 || rise.value <= 0) continue
+      const dx = dm[1].toUpperCase() === 'RIGHT' ? run.value : -run.value
+      const dy = dm[3].toUpperCase() === 'DOWN' ? rise.value : -rise.value
+      segments.push({ diagonal: true, dx, dy })
+      continue
+    }
+
     // Match direction + distance + optional unit on same line
-    const m = line.match(/\b(RIGHT|LEFT|UP|DOWN)\s+([\d]+(?:['.]\s*[\d]+"?)?(?:\.\d+)?)\s*(m(?:eters?)?|ft|feet|['"])?/i)
+    const m = line.match(orthoRe)
     if (!m) continue
 
     const dir = m[1].toUpperCase()
-    const rawDist = m[2].trim()
-    const rawUnit = (m[3] || '').toLowerCase().replace(/\s/g, '')
+    const { value, unit: valueUnit } = parseValue(m[2])
 
     // Detect unit
-    if (!unit) {
-      if (rawUnit.startsWith('m')) unit = 'm'
-      else if (rawUnit === 'ft' || rawUnit === 'feet' || rawUnit === "'") unit = 'ft'
-    }
-
-    // Parse value — handle feet-inch "31'6"" and plain numbers
-    let value
-    const feetInchMatch = rawDist.match(/^(\d+)'\s*(\d+)"?$/)
-    const feetOnlyMatch = rawDist.match(/^(\d+)'$/)
-    if (feetInchMatch) {
-      value = parseInt(feetInchMatch[1]) + parseInt(feetInchMatch[2]) / 12
-      if (!unit) unit = 'ft'
-    } else if (feetOnlyMatch) {
-      value = parseFloat(feetOnlyMatch[1])
-      if (!unit) unit = 'ft'
-    } else {
-      value = parseFloat(rawDist)
-    }
+    if (!unit) unit = detectUnit(m[3]) || valueUnit
 
     if (isNaN(value) || value <= 0) continue
     segments.push({ dir, value })
@@ -246,7 +276,8 @@ function parseWalkToPolygon(walkText) {
   let x = 0, y = 0
   const pts = [{ x: 0, y: 0 }]
   for (const seg of segments) {
-    if      (seg.dir === 'RIGHT') x += seg.value
+    if      (seg.diagonal)        { x += seg.dx; y += seg.dy }
+    else if (seg.dir === 'RIGHT') x += seg.value
     else if (seg.dir === 'LEFT')  x -= seg.value
     else if (seg.dir === 'DOWN')  y += seg.value
     else if (seg.dir === 'UP')    y -= seg.value
@@ -349,24 +380,34 @@ function forceOrthogonal(parsedPlan) {
   const pts = parsedPlan.outerBoundary
   if (!pts || pts.length < 4) return parsedPlan
 
-  // Check if there are any non-axis-aligned edges at all.
+  // Edges whose shorter axis component is <= SKEW_RATIO of the longer one are
+  // treated as "intended axis-aligned but slightly skewed" and snapped to pure
+  // H/V. Steeper edges are genuine diagonals (e.g. a 45° chamfer) and kept as
+  // drawn. atan(0.35) ≈ 19.3°, matching orthogonalizeMostlyAxisAlignedPoints in
+  // routes/sketch.js so the two passes agree on what counts as a diagonal.
+  const SKEW_RATIO = 0.35
+  const isSkewEdge = (adx, ady) =>
+    adx > 0.01 && ady > 0.01 && Math.min(adx, ady) / Math.max(adx, ady) <= SKEW_RATIO
+
+  // Only run if at least one near-axis skewed edge exists; otherwise the shape
+  // is already clean (pure orthogonal or intentional diagonals) — leave it.
   const hasSkew = pts.some((p, i) => {
     const n = pts[(i + 1) % pts.length]
-    const dx = Math.abs(n.x - p.x)
-    const dy = Math.abs(n.y - p.y)
-    // Both dx and dy are non-trivial → diagonal edge
-    return dx > 0.01 && dy > 0.01
+    return isSkewEdge(Math.abs(n.x - p.x), Math.abs(n.y - p.y))
   })
   if (!hasSkew) return parsedPlan
 
-  // Walk forward snapping each destination vertex.
+  // Walk forward snapping only the skewed destination vertices.
   const result = [{ x: +pts[0].x.toFixed(3), y: +pts[0].y.toFixed(3) }]
   for (let i = 1; i < pts.length; i++) {
     const prev = result[result.length - 1]
     const curr = pts[i]
     const dx = Math.abs(curr.x - prev.x)
     const dy = Math.abs(curr.y - prev.y)
-    if (dx >= dy) {
+    if (!isSkewEdge(dx, dy)) {
+      // Genuine diagonal (or already axis-aligned) — keep the vertex as-is.
+      result.push({ x: +curr.x.toFixed(3), y: +curr.y.toFixed(3) })
+    } else if (dx >= dy) {
       // Horizontal edge — lock y to previous vertex
       result.push({ x: +curr.x.toFixed(3), y: prev.y })
     } else {
@@ -375,16 +416,16 @@ function forceOrthogonal(parsedPlan) {
     }
   }
 
-  // The closing edge connects result[last] back to result[0].
-  // For the polygon to close orthogonally the last vertex must share either
-  // x or y with the first vertex.  Adjust the last vertex to enforce this:
-  // choose whichever axis (x or y) has the smaller correction needed.
+  // The closing edge connects result[last] back to result[0]. Only force an
+  // orthogonal closure when that edge is itself near-axis; a genuine diagonal
+  // closing edge is left intact.
   const first = result[0]
   const last  = result[result.length - 1]
   const fixX  = Math.abs(last.x - first.x)
   const fixY  = Math.abs(last.y - first.y)
-  if (fixX > 0.01 && fixY > 0.01) {
-    // Neither axis is already aligned — pick the smaller correction
+  if (isSkewEdge(fixX, fixY)) {
+    // Neither axis is already aligned but the edge is near-axis — pick the
+    // smaller correction.
     if (fixX <= fixY) {
       result[result.length - 1] = { x: first.x, y: last.y }
     } else {
