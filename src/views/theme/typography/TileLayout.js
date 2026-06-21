@@ -17,7 +17,10 @@ import LoadingOverlay from '../../components/PedestalCalculator/LoadingOverlay'
 
 const TILE_TYPES = [
   { id: 'tile16-16', name: 'Tile 16×16 in', width: 40.64, height: 40.64 },
+  { id: 'tile16-48', name: 'Tile 16×48 in', width: 121.92, height: 40.64 },
+  { id: 'tile50-50', name: 'Tile 50×50 cm', width: 50, height: 50, imperialWidth: 50.8, imperialHeight: 50.8 },
   { id: 'tile60-60', name: 'Tile 60×60 cm', width: 60, height: 60, imperialWidth: 60.96, imperialHeight: 60.96 },
+  { id: 'tile30-60', name: 'Tile 30×60 cm', width: 60, height: 30, imperialWidth: 60.96, imperialHeight: 30.48 },
   { id: 'tile40-60', name: 'Tile 40×60 cm', width: 60, height: 40, imperialWidth: 60.96, imperialHeight: 40.64 },
   { id: 'tile60-120', name: 'Tile 60×120 cm', width: 120, height: 60, imperialWidth: 121.92, imperialHeight: 60.96 },
   { id: 'tile30-120', name: 'Tile 30×120 cm', width: 120, height: 30, imperialWidth: 121.92, imperialHeight: 30.48 },
@@ -217,7 +220,12 @@ const TileLayout = ({
 
     // square and short rectangular tiles: no offset allowed
     if (
-      (tileId === 'tile16-16' || tileId === 'tile60-60' || tileId === 'tile40-60') &&
+      (tileId === 'tile16-16' ||
+        tileId === 'tile16-48' ||
+        tileId === 'tile50-50' ||
+        tileId === 'tile60-60' ||
+        tileId === 'tile30-60' ||
+        tileId === 'tile40-60') &&
       isOffsetState !== false &&
       isOffsetState !== 'none'
     ) {

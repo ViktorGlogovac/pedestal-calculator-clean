@@ -1,10 +1,13 @@
-import React from 'react'
+import React, { useState } from 'react'
 import PropTypes from 'prop-types'
 import { useLanguage } from '../../../context/LanguageContext'
 
 export const TILE_TYPES = [
   { id: 'tile16-16', name: 'Tile 16x16 in', width: 40.64, height: 40.64 },
+  { id: 'tile16-48', name: 'Tile 16x48 in', width: 121.92, height: 40.64 },
+  { id: 'tile50-50', name: 'Tile 50x50 cm', width: 50, height: 50, imperialWidth: 50.8, imperialHeight: 50.8 },
   { id: 'tile60-60', name: 'Tile 60x60 cm', width: 60, height: 60, imperialWidth: 60.96, imperialHeight: 60.96 },
+  { id: 'tile30-60', name: 'Tile 30x60 cm', width: 60, height: 30, imperialWidth: 60.96, imperialHeight: 30.48 },
   { id: 'tile40-60', name: 'Tile 40x60 cm', width: 60, height: 40, imperialWidth: 60.96, imperialHeight: 40.64 },
   { id: 'tile60-120', name: 'Tile 60x120 cm', width: 120, height: 60, imperialWidth: 121.92, imperialHeight: 60.96 },
   { id: 'tile30-120', name: 'Tile 30x120 cm', width: 120, height: 30, imperialWidth: 121.92, imperialHeight: 30.48 },
@@ -27,6 +30,8 @@ function TileOptionsPanel({
   onShowInstructions,
 }) {
   const { t } = useLanguage()
+  const [showAllTiles, setShowAllTiles] = useState(false)
+  const COLLAPSED_TILE_COUNT = 4
   const isOffsetEnabled =
     selectedTileType.id === 'tile60-120' || selectedTileType.id === 'tile30-120'
   const isThirdOffsetEnabled = selectedTileType.id === 'tile30-120'
@@ -69,7 +74,15 @@ function TileOptionsPanel({
 
       <PanelSection title={t('calculator.tileSize')}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {TILE_TYPES.map((tile) => {
+          {(() => {
+            const selectedIndex = TILE_TYPES.findIndex((tile) => tile.id === selectedTileType.id)
+            // Keep the selected tile visible even when collapsed past the cutoff.
+            const visibleCount =
+              showAllTiles || selectedIndex < 0
+                ? TILE_TYPES.length
+                : Math.max(COLLAPSED_TILE_COUNT, selectedIndex + 1)
+            return TILE_TYPES.slice(0, visibleCount)
+          })().map((tile) => {
             const tileDims = getTileDimensions(tile)
             const dim1 = unitSystem === 'imperial' ? tileDims.width / 2.54 : tileDims.width
             const dim2 = unitSystem === 'imperial' ? tileDims.height / 2.54 : tileDims.height
@@ -100,6 +113,16 @@ function TileOptionsPanel({
             )
           })}
         </div>
+        {TILE_TYPES.length > COLLAPSED_TILE_COUNT && (
+          <button
+            type="button"
+            className="pc-btn"
+            onClick={() => setShowAllTiles((prev) => !prev)}
+            style={{ width: '100%', justifyContent: 'center', marginTop: 6 }}
+          >
+            {showAllTiles ? t('calculator.showLess') : t('calculator.showMore')}
+          </button>
+        )}
       </PanelSection>
 
       <PanelSection title={t('calculator.orientation')}>

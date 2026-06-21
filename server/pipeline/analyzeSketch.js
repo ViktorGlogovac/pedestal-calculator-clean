@@ -94,6 +94,12 @@ Task:
   (a chamfered or 45-degree cut corner, often labeled with a slanted length such as "√2")
   is a SINGLE "DIAGONAL" move — do NOT break it into separate RIGHT + DOWN rectilinear steps.
   A √2 edge is ONE diagonal, not "DOWN 1 then RIGHT 1". Staircasing a sloped wall is WRONG.
+- CURVED / ROUNDED walls (an arc, a bay, a semicircular bump) are allowed too. Approximate
+  each curved wall as a chain of SHORT straight chord segments that hug the curve — use
+  DIAGONAL moves (and RIGHT/LEFT/UP/DOWN where a chord is axis-aligned). Use enough chords
+  to follow the curve faithfully: roughly 6-10 chords for a half-circle, more for a longer
+  arc. Each chord is its own walk step. Do NOT replace a curve with a single straight line
+  or a square corner.
 - Start at the top-left outer corner of the shape and walk clockwise.
 - Follow the visible dark outline exactly. Every move must lie on a drawn boundary edge.
 - Do not cross empty gaps to connect separate horizontal levels. If a horizontal segment is lower than the previous one, include the vertical DOWN step between them.

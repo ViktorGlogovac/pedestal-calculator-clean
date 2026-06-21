@@ -60,6 +60,9 @@ async function extractShapeVision(imagePath, userNotes = '', ocrItems = []) {
         '   A wall labeled with a slanted length such as √2, or any edge drawn at an angle, MUST be a DIAGONAL.\n' +
         '   NEVER break a sloped wall into separate RIGHT + DOWN rectilinear steps — a √2 edge is ONE DIAGONAL,\n' +
         '   not "DOWN 1 then RIGHT 1". Breaking an angled wall into a staircase is WRONG.\n' +
+        '   CURVED / ROUNDED walls (arcs, bays, semicircular bumps): approximate each curve as a chain of\n' +
+        '   SHORT chord segments that hug it — DIAGONAL moves (or RIGHT/LEFT/UP/DOWN for axis-aligned chords),\n' +
+        '   ~6-10 chords for a half-circle. Do NOT replace a curve with one straight line or a square corner.\n' +
         '6. Preserve units exactly as written. Do NOT convert units.\n' +
         '7. Start at the top-left outer corner of the DECK (not the page) and walk clockwise.\n' +
         '8. Trace EVERY corner faithfully — notches, steps, and cutouts are real architectural features even if they are small (e.g. 1m on a 20m deck).\n' +
