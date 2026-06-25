@@ -16,8 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Codex CLI is spawned as a child process from server/pipeline/codexCli.js.
-# Installing globally puts the `codex` binary on PATH.
-RUN npm install -g @openai/codex
+# Installing globally puts the `codex` binary on PATH. Pin to the local
+# production-tested CLI version so Cloud Run does not drift on rebuilds.
+RUN npm install -g @openai/codex@0.141.0
 
 # Install npm deps first so this layer caches across code changes.
 # --legacy-peer-deps: matches local install; bypasses react-canvas-draw's React

@@ -3,10 +3,17 @@ require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
 const path = require('path')
+const { spawnSync } = require('child_process')
 const sketchRoutes = require('./routes/sketch')
 
 const app = express()
 const PORT = process.env.PORT || 3001
+
+function getCodexVersion() {
+  const codexBin = process.env.CODEX_CLI_PATH || 'codex'
+  const result = spawnSync(codexBin, ['--version'], { encoding: 'utf8' })
+  return String(result.stdout || result.stderr || '').trim() || 'unknown'
+}
 
 // ── Middleware ───────────────────────────────────────────────────────────────
 app.use(cors({
@@ -38,6 +45,7 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     codexCli: process.env.CODEX_CLI_PATH || 'codex',
+    codexVersion: getCodexVersion(),
     codexModel: process.env.CODEX_SKETCH_MODEL || process.env.OPENAI_SKETCH_MODEL || process.env.OPENAI_MODEL || 'default',
   })
 })
