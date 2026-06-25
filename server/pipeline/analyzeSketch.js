@@ -1,8 +1,8 @@
 /**
  * Simple Codex CLI sketch analysis.
  *
- * One image in, one orthogonal perimeter walk out.  No OCR pipeline, no CV
- * fallback, no second-pass verifier.
+ * One image in, one perimeter walk plus optional enclosed cutout walks out.
+ * No OCR pipeline, no CV fallback, no second-pass verifier.
  */
 
 const fs = require('fs')
@@ -11,7 +11,7 @@ const { callCodexCli, parseJsonObject } = require('./codexCli')
 const WALK_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['unit', 'walk', 'warnings'],
+  required: ['unit', 'walk', 'cutouts', 'warnings'],
   properties: {
     unit: { type: 'string' },
     walk: {
@@ -29,6 +29,37 @@ const WALK_SCHEMA = {
           dy: { type: 'number' },
           source: { type: 'string' },
           label: { type: 'string' },
+        },
+      },
+    },
+    cutouts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'startX', 'startY', 'walk'],
+        properties: {
+          name: { type: 'string' },
+          // Start coordinate in the same deck coordinate system as the outer
+          // walk after it is normalized to top-left origin.
+          startX: { type: 'number' },
+          startY: { type: 'number' },
+          walk: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['dir', 'dist', 'dx', 'dy', 'source', 'label'],
+              properties: {
+                dir: { type: 'string', enum: ['RIGHT', 'LEFT', 'UP', 'DOWN', 'DIAGONAL'] },
+                dist: { type: 'number' },
+                dx: { type: 'number' },
+                dy: { type: 'number' },
+                source: { type: 'string' },
+                label: { type: 'string' },
+              },
+            },
+          },
         },
       },
     },
@@ -62,15 +93,18 @@ async function analyzeSketch(imagePath, userNotes = '', unitSystem = 'metric', o
     throw new Error(`Codex CLI walk produced only ${polygon?.length ?? 0} corners — not a valid polygon`)
   }
 
+  const cutoutResult = normalizeCutouts(parsed.cutouts, polygon)
   const segments = buildSegments(polygon, normalized.walk, unit)
   const warnings = [
     ...(Array.isArray(parsed.warnings) ? parsed.warnings.filter(Boolean).map(String) : []),
     ...normalized.warnings,
+    ...cutoutResult.warnings,
   ]
 
   return {
     unit,
     outerBoundary: polygon,
+    cutouts: cutoutResult.cutouts,
     segments,
     ocrItems: [],
     warnings,
@@ -87,7 +121,10 @@ function buildPrompt(userNotes, unitSystem) {
   return `Look at the attached hand-drawn deck/patio plan and return the same kind of basic geometry answer a careful human would give.
 
 Task:
-- Trace only the dark outer perimeter.
+- Trace the dark outer perimeter as "walk".
+- Also find any closed dark outlines completely inside the outer perimeter, such as pools,
+  planters, voids, shafts, courtyards, or other no-deck/no-pedestal regions. Return these
+  as "cutouts". Each cutout removes material from the main deck.
 - Ignore ruled notebook paper lines, text boxes, arrows, and visual noise.
 - Most edges are rectilinear: RIGHT, DOWN, LEFT, UP moves.
 - ANGLED / SLOPED walls are allowed and must be preserved. A wall drawn at an angle
@@ -102,6 +139,13 @@ Task:
   or a square corner.
 - Start at the top-left outer corner of the shape and walk clockwise.
 - Follow the visible dark outline exactly. Every move must lie on a drawn boundary edge.
+- For each cutout, start at that cutout's top-left corner and walk clockwise around the
+  inner dark outline. Set startX/startY to that top-left cutout corner in the SAME coordinate
+  system as the outer walk after the outer top-left is (0,0). Example: if a rectangular pool
+  begins 5m right and 3m down from the deck's top-left outer corner, use startX=5, startY=3.
+- Only include true enclosed interior no-build regions as cutouts. Do not include dimension
+  boxes, green annotation rectangles, text frames, arrows, labels, or disconnected exterior
+  outlines.
 - Do not cross empty gaps to connect separate horizontal levels. If a horizontal segment is lower than the previous one, include the vertical DOWN step between them.
 - Use visible labels for edge distances.
 - A dimension label belongs to the edge it is drawn beside. A bottom label is not a top label.
@@ -127,6 +171,19 @@ Output exactly:
     { "dir": "DIAGONAL", "dist": 1.41, "dx": 1, "dy": 1, "source": "label", "label": "√2m" },
     { "dir": "DOWN", "dist": 8, "dx": 0, "dy": 0, "source": "label", "label": "8m" },
     { "dir": "RIGHT", "dist": 5, "dx": 0, "dy": 0, "source": "inferred", "label": "" }
+  ],
+  "cutouts": [
+    {
+      "name": "pool",
+      "startX": 5,
+      "startY": 3,
+      "walk": [
+        { "dir": "RIGHT", "dist": 4, "dx": 0, "dy": 0, "source": "label", "label": "4m" },
+        { "dir": "DOWN", "dist": 2, "dx": 0, "dy": 0, "source": "label", "label": "2m" },
+        { "dir": "LEFT", "dist": 4, "dx": 0, "dy": 0, "source": "label", "label": "4m" },
+        { "dir": "UP", "dist": 2, "dx": 0, "dy": 0, "source": "label", "label": "2m" }
+      ]
+    }
   ],
   "warnings": ["short human-readable warning for inferred/missing dimensions"]
 }
@@ -284,6 +341,86 @@ function walkToPolygon(walk) {
   const minX = Math.min(...pts.map((pt) => pt.x))
   const minY = Math.min(...pts.map((pt) => pt.y))
   return pts.map((pt) => ({ x: +(pt.x - minX).toFixed(4), y: +(pt.y - minY).toFixed(4) }))
+}
+
+function walkToPolygonAt(walk, startX, startY) {
+  if (!Array.isArray(walk) || walk.length < 4) return null
+
+  let x = Number.isFinite(startX) ? startX : 0
+  let y = Number.isFinite(startY) ? startY : 0
+  const pts = [{ x: +x.toFixed(4), y: +y.toFixed(4) }]
+
+  for (const step of walk) {
+    const { dx, dy } = stepDelta(step)
+    if (dx === 0 && dy === 0) continue
+    x += dx
+    y += dy
+    pts.push({ x: +x.toFixed(4), y: +y.toFixed(4) })
+  }
+
+  if (pts.length > 1) {
+    const first = pts[0]
+    const last = pts[pts.length - 1]
+    if (Math.abs(first.x - last.x) < 0.01 && Math.abs(first.y - last.y) < 0.01) pts.pop()
+  }
+
+  return pts.length >= 4 ? pts : null
+}
+
+function normalizeCutouts(rawCutouts, outerBoundary) {
+  const cutouts = []
+  const warnings = []
+
+  for (const raw of Array.isArray(rawCutouts) ? rawCutouts : []) {
+    const name = String(raw?.name || `cutout ${cutouts.length + 1}`).trim()
+    const startX = parseFloat(raw?.startX)
+    const startY = parseFloat(raw?.startY)
+
+    if (!Number.isFinite(startX) || !Number.isFinite(startY)) {
+      warnings.push(`Skipped ${name}: missing cutout start coordinate.`)
+      continue
+    }
+
+    const normalized = normalizeWalk(raw.walk)
+    const polygon = removeCollinearPoints(walkToPolygonAt(normalized.walk, startX, startY))
+    if (!polygon || polygon.length < 4) {
+      warnings.push(`Skipped ${name}: cutout walk did not produce a valid closed polygon.`)
+      continue
+    }
+
+    const center = polygonCentroid(polygon)
+    if (outerBoundary?.length >= 3 && !pointInPolygon(center, outerBoundary)) {
+      warnings.push(`Skipped ${name}: cutout is not inside the outer boundary.`)
+      continue
+    }
+
+    cutouts.push(polygon)
+    warnings.push(...normalized.warnings.map((warning) => `${name}: ${warning}`))
+  }
+
+  return { cutouts, warnings }
+}
+
+function polygonCentroid(points) {
+  const sum = points.reduce((acc, point) => {
+    acc.x += point.x
+    acc.y += point.y
+    return acc
+  }, { x: 0, y: 0 })
+  return { x: sum.x / points.length, y: sum.y / points.length }
+}
+
+function pointInPolygon(point, polygon) {
+  let inside = false
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const pi = polygon[i]
+    const pj = polygon[j]
+    const intersects =
+      ((pi.y > point.y) !== (pj.y > point.y)) &&
+      (point.x < ((pj.x - pi.x) * (point.y - pi.y)) / ((pj.y - pi.y) || 1e-9) + pi.x)
+    if (intersects) inside = !inside
+  }
+  return inside
 }
 
 function removeCollinearPoints(points) {

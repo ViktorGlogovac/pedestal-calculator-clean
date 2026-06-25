@@ -277,7 +277,9 @@ function testCanvasConversion() {
     outerBoundary: [
       { x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 8 }, { x: 0, y: 8 },
     ],
-    cutouts: [],
+    cutouts: [[
+      { x: 2, y: 2 }, { x: 5, y: 2 }, { x: 5, y: 4 }, { x: 2, y: 4 },
+    ]],
     segments: [],
     depthPoints: [],
     notes: [],
@@ -285,10 +287,13 @@ function testCanvasConversion() {
 
   const shapes = toCanvasShapes(deckPlan, 35)
 
-  expect('canvas shapes count', shapes.length, 1)
+  expect('canvas shapes count', shapes.length, 2)
   expect('shape type', shapes[0].type, 'add')
   expect('shape closed', shapes[0].isLoopClosed, true)
   expect('shape has 4 points', shapes[0].points.length, 4)
+  expect('cutout shape type', shapes[1].type, 'sub')
+  expect('cutout shape closed', shapes[1].isLoopClosed, true)
+  expect('cutout has 4 points', shapes[1].points.length, 4)
 
   // Check pixel math: x=10ft at gridSize=35 → (10*30.48/100)*35 ≈ 106 px + margin
   const expectedX = 2 * 35 + Math.round((10 * 30.48 / 100) * 35)
