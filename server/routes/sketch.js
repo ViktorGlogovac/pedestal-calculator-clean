@@ -148,6 +148,7 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
     })
     debugData.stages.codexAnalysis = {
       corners: codexResult.outerBoundary.length,
+      cutoutCount: Array.isArray(codexResult.cutouts) ? codexResult.cutouts.length : 0,
       unit: codexResult.unit,
       requestedUnitSystem: unitSystem,
       segmentCount: codexResult.segments.length,
@@ -160,7 +161,8 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
     )
     console.log(
       `[sketch] Codex complete in ${Date.now() - startedAt}ms: ` +
-      `${codexResult.outerBoundary.length} corners, ${codexResult.segments.length} segments`
+      `${codexResult.outerBoundary.length} corners, ${codexResult.segments.length} segments, ` +
+      `${Array.isArray(codexResult.cutouts) ? codexResult.cutouts.length : 0} cutouts`
     )
   } catch (err) {
     warnings.push(`Codex CLI analysis failed: ${err.message}`)
@@ -206,7 +208,7 @@ router.post('/analyze', upload.fields([{ name: 'image', maxCount: 1 }, { name: '
       unit: codexResult.unit,
       requestedUnitSystem: unitSystem,
       outerBoundary: codexResult.outerBoundary,
-      cutouts: [],
+      cutouts: Array.isArray(codexResult.cutouts) ? codexResult.cutouts : [],
       segments,
       depthPoints,
       notes: [{ text: 'Shape extracted by simple Codex CLI image analysis', confidence: 0.85 }],
