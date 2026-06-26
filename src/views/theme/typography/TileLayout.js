@@ -16,7 +16,7 @@ import LoadingOverlay from '../../components/PedestalCalculator/LoadingOverlay'
 
 const TILE_TYPES = [
   { id: 'tile16-16', name: 'Tile 16×16 in', width: 40.64, height: 40.64 },
-  { id: 'tile16-48', name: 'Tile 16×48 in', width: 121.92, height: 40.64 },
+  { id: 'tile16-48', name: 'Tile 16×48 in', width: 120, height: 41 },
   { id: 'tile50-50', name: 'Tile 50×50 cm', width: 50, height: 50, imperialWidth: 50.8, imperialHeight: 50.8 },
   { id: 'tile60-60', name: 'Tile 60×60 cm', width: 60, height: 60, imperialWidth: 60.96, imperialHeight: 60.96 },
   { id: 'tile30-60', name: 'Tile 30×60 cm', width: 60, height: 30, imperialWidth: 60.96, imperialHeight: 30.48 },

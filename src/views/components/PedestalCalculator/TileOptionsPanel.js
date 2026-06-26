@@ -4,7 +4,7 @@ import { useLanguage } from '../../../context/LanguageContext'
 
 export const TILE_TYPES = [
   { id: 'tile16-16', name: 'Tile 16x16 in', width: 40.64, height: 40.64 },
-  { id: 'tile16-48', name: 'Tile 16x48 in', width: 121.92, height: 40.64 },
+  { id: 'tile16-48', name: 'Tile 16x48 in', width: 120, height: 41 },
   { id: 'tile50-50', name: 'Tile 50x50 cm', width: 50, height: 50, imperialWidth: 50.8, imperialHeight: 50.8 },
   { id: 'tile60-60', name: 'Tile 60x60 cm', width: 60, height: 60, imperialWidth: 60.96, imperialHeight: 60.96 },
   { id: 'tile30-60', name: 'Tile 30x60 cm', width: 60, height: 30, imperialWidth: 60.96, imperialHeight: 30.48 },
