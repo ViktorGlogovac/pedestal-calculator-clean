@@ -4,11 +4,10 @@ import polygonClipping from 'polygon-clipping'
 import PropTypes from 'prop-types'
 
 import {
-  pointInTriangle,
   findContainingTriangle,
   barycentricCoordinates,
-  subdivideTileRect,
   dedupeAndSnapPedestals,
+  fillLongPedestalSpans,
 } from '../../components/PedestalCalculator/geometryUtils'
 
 import TileCanvas from '../../components/PedestalCalculator/TileCanvas'
@@ -28,9 +27,6 @@ const TILE_TYPES = [
 
 const EPSILON = 1e-6
 
-const isCoordinatePair = (point) =>
-  Array.isArray(point) && typeof point[0] === 'number' && typeof point[1] === 'number'
-
 const ensureClosedRing = (ring) => {
   if (!ring.length) return ring
   const first = ring[0]
@@ -47,13 +43,6 @@ const extractOuterRings = (multiPolygon) =>
 const collapsePolygonState = (rings) => {
   if (!rings.length) return []
   return rings.length === 1 ? rings[0] : rings
-}
-
-const normalizeBoundaryPolygons = (boundary) => {
-  if (!Array.isArray(boundary) || boundary.length === 0) return []
-  if (isCoordinatePair(boundary[0])) return [boundary]
-  if (Array.isArray(boundary[0]) && isCoordinatePair(boundary[0][0])) return boundary
-  return []
 }
 
 const pointInRing = ([x, y], ring) => {
@@ -109,7 +98,17 @@ const getTileIntersection = (subRect, geometry) => {
   return polygonClipping.intersection(subRect, geometry)
 }
 
-const coordinateKey = (x, y) => `${Number(x).toFixed(4)},${Number(y).toFixed(4)}`
+const createTileRect = (x, y, w, h) => [
+  [
+    [
+      [x, y],
+      [x + w, y],
+      [x + w, y + h],
+      [x, y + h],
+      [x, y],
+    ],
+  ],
+]
 
 const getTileDimensions = (tile, unitSystem) => {
   if (unitSystem === 'imperial') {
@@ -342,46 +341,9 @@ const TileLayout = ({
       ;[tileWidthCm, tileHeightCm] = [tileHeightCm, tileWidthCm]
     }
 
-    // Pedestal placement per the official slab-size chart: a pedestal on every
-    // tile corner, plus intermediate points on long edges. Most full slabs use
-    // ~60 cm (24 in) spacing; narrow 30x120 / 12x48 slabs use thirds only for
-    // 1/3 offset; 1/2 offset keeps the standard center support.
-    const spacingCm = unitSystem === 'imperial' ? 60.96 : 60
-    // Most cut pieces get corners only. For 30x120 / 12x48 pieces, keep the
-    // long-edge support rule on boundary rows because those intersections still
-    // need pedestals where the staggered tile seams land.
-    const subdivideTilePiece = (px, py, w, h) => {
-      if (selectedTileTypeState.id === 'tile30-120') {
-        const longEdgeStep =
-          isOffsetState === 'third' ? Math.max(tileWidthCm, tileHeightCm) / 3 : spacingCm
-        return subdivideTileRect(
-          px,
-          py,
-          tileWidthCm > tileHeightCm ? tileWidthCm : w,
-          tileHeightCm > tileWidthCm ? tileHeightCm : h,
-          tileWidthCm > tileHeightCm ? longEdgeStep : Infinity,
-          tileHeightCm > tileWidthCm ? longEdgeStep : Infinity,
-        )
-      }
-
-      // A long edge needs a mid-span pedestal whenever that edge still spans the
-      // tile's full dimension — even on pieces cut on the other axis. Treating a
-      // tile as "full" only when BOTH axes are full dropped a piece that is still
-      // a complete 120 cm long edge (e.g. a short bottom-row tile) to corners
-      // only, losing the center support on its 120 cm side. Decide each axis
-      // independently: a full-length axis gets the standard spacing, a cut axis
-      // stays at corners only.
-      const fullWidth = w >= tileWidthCm - EPSILON
-      const fullHeight = h >= tileHeightCm - EPSILON
-      return subdivideTileRect(
-        px,
-        py,
-        w,
-        h,
-        fullWidth ? spacingCm : Infinity,
-        fullHeight ? spacingCm : Infinity,
-      )
-    }
+    // Pedestal on every tile corner, then repeatedly add exact midpoints on
+    // spans longer than the maximum allowed support spacing.
+    const createTilePiece = (px, py, w, h) => createTileRect(px, py, w, h)
     const xs = controlPoints.map((p) => p.x)
     const ys = controlPoints.map((p) => p.y)
     const minX = Math.min(...xs)
@@ -399,6 +361,18 @@ const TileLayout = ({
     const newTiles = []
     const newPedestals = []
     const pedestalPositions = new Set()
+    const collectIntersectionPedestalPoints = (intersection) => {
+      const pointsByKey = new Map()
+      ;(intersection || []).forEach((polygon) => {
+        ;(polygon || []).forEach((ring) => {
+          if (!Array.isArray(ring) || ring.length < 2) return
+          ring.forEach(([px, py]) => {
+            pointsByKey.set(`${Number(px).toFixed(6)},${Number(py).toFixed(6)}`, [px, py])
+          })
+        })
+      })
+      return Array.from(pointsByKey.values())
+    }
 
     if (orientationState === 'portrait') {
       // Portrait: loop over columns (x), offset y
@@ -424,22 +398,14 @@ const TileLayout = ({
           const curTileH = Math.min(offsetY, tileHeightCm, maxY - y)
           // Only create if the tile is not a thin sliver (e.g., > 2cm)
           if (curTileW > 0 && curTileH > 2) {
-            const subRects = subdivideTilePiece(x, y, curTileW, curTileH)
+            const subRects = createTilePiece(x, y, curTileW, curTileH)
             const mergedSubRectShape = []
             subRects.forEach((subRect) => {
               const intersection = getTileIntersection(subRect, projectGeometry)
               if (intersection.length > 0) {
                 mergedSubRectShape.push(...intersection)
-                // For each vertex, find pedestal height
-                const flattened = intersection.flat(2)
-                const verticesSet = new Set()
-                flattened.forEach(([px, py]) => {
-                  verticesSet.add(`${px},${py}`)
-                })
-                const vertices = Array.from(verticesSet).map((k) => {
-                  const [vx, vy] = k.split(',').map(Number)
-                  return [vx, vy]
-                })
+                // For each clipped tile edge point, find pedestal height.
+                const vertices = collectIntersectionPedestalPoints(intersection)
                 vertices.forEach(([vx, vy]) => {
                   const key = `${vx},${vy}`
                   if (!pedestalPositions.has(key)) {
@@ -476,7 +442,7 @@ const TileLayout = ({
           const curTileH = Math.min(tileHeightCm, maxY - y)
           if (curTileW <= 0 || curTileH <= 0) continue
 
-          const subRects = subdivideTilePiece(x, y, curTileW, curTileH)
+          const subRects = createTilePiece(x, y, curTileW, curTileH)
           const mergedSubRectShape = []
 
           subRects.forEach((subRect) => {
@@ -484,16 +450,8 @@ const TileLayout = ({
             if (intersection.length > 0) {
               mergedSubRectShape.push(...intersection)
 
-              // For each vertex, find pedestal height
-              const flattened = intersection.flat(2)
-              const verticesSet = new Set()
-              flattened.forEach(([px, py]) => {
-                verticesSet.add(`${px},${py}`)
-              })
-              const vertices = Array.from(verticesSet).map((k) => {
-                const [vx, vy] = k.split(',').map(Number)
-                return [vx, vy]
-              })
+              // For each clipped tile edge point, find pedestal height.
+              const vertices = collectIntersectionPedestalPoints(intersection)
 
               vertices.forEach(([vx, vy]) => {
                 const key = `${vx},${vy}`
@@ -548,7 +506,7 @@ const TileLayout = ({
           const curTileH = Math.min(tileHeightCm, maxY - y)
           if (curTileW <= 0 || curTileH <= 0) continue
 
-          const subRects = subdivideTilePiece(x, y, curTileW, curTileH)
+          const subRects = createTilePiece(x, y, curTileW, curTileH)
           const mergedSubRectShape = []
 
           subRects.forEach((subRect) => {
@@ -556,16 +514,8 @@ const TileLayout = ({
             if (intersection.length > 0) {
               mergedSubRectShape.push(...intersection)
 
-              // For each vertex, find pedestal height
-              const flattened = intersection.flat(2)
-              const verticesSet = new Set()
-              flattened.forEach(([px, py]) => {
-                verticesSet.add(`${px},${py}`)
-              })
-              const vertices = Array.from(verticesSet).map((k) => {
-                const [vx, vy] = k.split(',').map(Number)
-                return [vx, vy]
-              })
+              // For each clipped tile edge point, find pedestal height.
+              const vertices = collectIntersectionPedestalPoints(intersection)
 
               vertices.forEach(([vx, vy]) => {
                 const key = `${vx},${vy}`
@@ -626,209 +576,23 @@ const TileLayout = ({
 
     setTiles(newTiles)
 
-    // Merge close pedestals (within 60cm) except for tile corners
-    function isOnBoundary(pedestal, boundary, tol = 2) {
-      const polygons = normalizeBoundaryPolygons(boundary)
-      if (polygons.length > 1) {
-        return polygons.some((polygon) => isOnBoundary(pedestal, polygon, tol))
-      }
-      // 2 cm tolerance
-      // Check if the pedestal is close to any boundary vertex
-      for (let i = 0; i < boundary.length; i++) {
-        const [vx, vy] = boundary[i]
-        if (Math.abs(pedestal.x - vx) < tol && Math.abs(pedestal.y - vy) < tol) {
-          return true
-        }
-      }
-      // Check if the pedestal is close to any segment of the boundary polygon
-      for (let i = 0; i < boundary.length; i++) {
-        const [x1, y1] = boundary[i]
-        const [x2, y2] = boundary[(i + 1) % boundary.length]
-        // Compute projection of pedestal onto segment
-        const dx = x2 - x1
-        const dy = y2 - y1
-        const lengthSq = dx * dx + dy * dy
-        if (lengthSq < EPSILON) continue
-        const t = ((pedestal.x - x1) * dx + (pedestal.y - y1) * dy) / lengthSq
-        if (t >= -0.05 && t <= 1.05) {
-          // allow a little extra margin
-          // Closest point on segment
-          const px = x1 + t * dx
-          const py = y1 + t * dy
-          const dist = Math.sqrt((pedestal.x - px) ** 2 + (pedestal.y - py) ** 2)
-          if (dist < tol) return true
-        }
-      }
-      return false
-    }
-
-    function buildTileCornerSet(tiles) {
-      const corners = new Set()
-      tiles.forEach((tile) => {
-        ;[
-          [tile.x, tile.y],
-          [tile.x + tile.width, tile.y],
-          [tile.x, tile.y + tile.height],
-          [tile.x + tile.width, tile.y + tile.height],
-        ].forEach(([x, y]) => corners.add(coordinateKey(x, y)))
-      })
-      return corners
-    }
-
-    function isTileCornerPedestal(pedestal, tileCornerSet) {
-      return tileCornerSet.has(coordinateKey(pedestal.x, pedestal.y))
-    }
-
-    function isTileCornerOrBoundaryPedestal(pedestal, tileCornerSet, boundary) {
-      return isTileCornerPedestal(pedestal, tileCornerSet) || (boundary && isOnBoundary(pedestal, boundary))
-    }
-
-    function mergeClosePedestalsAdaptive(
-      pedestals,
-      tileCornerSet,
-      boundary,
-      maxDist = 60,
-      orientation = 'landscape',
-    ) {
-      const merged = []
-      const used = new Array(pedestals.length).fill(false)
-      const tol = 2 // cm tolerance for grouping by row/col
-      // Helper to group by row or column
-      function getGroupKey(p) {
-        return orientation === 'landscape'
-          ? Math.round(p.y / tol) * tol
-          : Math.round(p.x / tol) * tol
-      }
-      // Group pedestals by row (landscape) or column (portrait)
-      const groups = {}
-      pedestals.forEach((p, i) => {
-        if (isTileCornerOrBoundaryPedestal(p, tileCornerSet, boundary)) {
-          merged.push(p)
-          used[i] = true
-        } else {
-          const key = getGroupKey(p)
-          if (!groups[key]) groups[key] = []
-          groups[key].push({ ...p, _idx: i })
-        }
-      })
-      // For each group, merge close pedestals
-      Object.values(groups).forEach((group) => {
-        // Sort by x (landscape) or y (portrait)
-        group.sort((a, b) => (orientation === 'landscape' ? a.x - b.x : a.y - b.y))
-        for (let i = 0; i < group.length; i++) {
-          if (used[group[i]._idx]) continue
-          let cluster = [group[i]]
-          used[group[i]._idx] = true
-          for (let j = i + 1; j < group.length; j++) {
-            if (used[group[j]._idx]) continue
-            // Since group is sorted by primary axis, once the gap exceeds maxDist
-            // all remaining elements are also out of range.
-            const primaryGap =
-              orientation === 'landscape'
-                ? group[j].x - group[i].x
-                : group[j].y - group[i].y
-            if (primaryGap > maxDist + EPSILON) break
-            const dx = group[i].x - group[j].x
-            const dy = group[i].y - group[j].y
-            const dist = Math.sqrt(dx * dx + dy * dy)
-            if (dist <= maxDist + EPSILON) {
-              cluster.push(group[j])
-              used[group[j]._idx] = true
-            }
-          }
-          if (cluster.length === 1) {
-            merged.push(cluster[0])
-          } else {
-            // Merge to average
-            const avg = cluster.reduce(
-              (acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y, height: acc.height + p.height }),
-              { x: 0, y: 0, height: 0 },
-            )
-            merged.push({
-              x: avg.x / cluster.length,
-              y: avg.y / cluster.length,
-              height: avg.height / cluster.length,
-            })
-          }
-        }
-      })
-      return merged
-    }
-
-    // Collapse pedestals that sit within `tol` cm of each other. Under a 1/3
-    // offset a staggered tile's corner can land ~20 cm from a neighbour's
-    // mid-edge support, which shows as doubled dots on edges. The smallest
-    // legitimate spacing is the 30 cm side of a 30x120 tile, so a sub-30 cm
-    // tolerance only removes those near-duplicates and never collapses real
-    // spacing. Tile corners and deck-boundary pedestals are NEVER moved: if a
-    // cluster contains one, it is kept exactly in place and the other (interior)
-    // near-duplicate is dropped, so corners always hold their position.
-    function collapseNearDuplicatePedestals(list, isProtected, tol = 24) {
-      const used = new Array(list.length).fill(false)
-      const result = []
-      const tolSq = tol * tol
-      for (let i = 0; i < list.length; i++) {
-        if (used[i]) continue
-        const cluster = [list[i]]
-        used[i] = true
-        for (let c = 0; c < cluster.length; c++) {
-          const a = cluster[c]
-          for (let j = 0; j < list.length; j++) {
-            if (used[j]) continue
-            const dx = a.x - list[j].x
-            const dy = a.y - list[j].y
-            if (dx * dx + dy * dy <= tolSq) {
-              used[j] = true
-              cluster.push(list[j])
-            }
-          }
-        }
-        if (cluster.length === 1) {
-          result.push(list[i])
-          continue
-        }
-        const protectedMembers = cluster.filter(isProtected)
-        if (protectedMembers.length > 0) {
-          // Keep corner / boundary pedestals exactly where they are; the nearby
-          // interior duplicates are dropped so corners never drift.
-          protectedMembers.forEach((p) => result.push(p))
-        } else {
-          const sum = cluster.reduce(
-            (acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y, height: acc.height + p.height }),
-            { x: 0, y: 0, height: 0 },
-          )
-          result.push({
-            x: sum.x / cluster.length,
-            y: sum.y / cluster.length,
-            height: sum.height / cluster.length,
-          })
-        }
-      }
-      return result
-    }
-
-    const tileCornerSet = buildTileCornerSet(newTiles)
-    const isProtectedPedestal = (pedestal) =>
-      isTileCornerPedestal(pedestal, tileCornerSet) ||
-      (userPolygonState && isOnBoundary(pedestal, userPolygonState))
-
-    const mergedPedestals = collapseNearDuplicatePedestals(
-      mergeClosePedestalsAdaptive(
-        dedupeAndSnapPedestals(newPedestals, userPolygonState),
-        tileCornerSet,
-        userPolygonState,
-        60,
-        orientationState,
-      ),
-      isProtectedPedestal,
+    const maxSupportSpacingCm = unitSystem === 'imperial' ? 60.96 : 60
+    const mergedPedestals = dedupeAndSnapPedestals(newPedestals, userPolygonState, 0.35, {
+      preserveAnchor: true,
+    })
+    const filledPedestals = dedupeAndSnapPedestals(
+      fillLongPedestalSpans(mergedPedestals, maxSupportSpacingCm, 0.35),
+      userPolygonState,
+      0.35,
+      { preserveAnchor: true },
     )
-    setPedestals(mergedPedestals)
+    setPedestals(filledPedestals)
 
     // Callback with data if needed
     if (onDataCalculated) {
       onDataCalculated({
         tiles: newTiles,
-        pedestals: mergedPedestals,
+        pedestals: filledPedestals,
         userPolygon: userPolygonState,
         tileCount: newTiles.length,
       })

@@ -12,28 +12,35 @@ export function polygonSignedArea(points) {
   return area / 2
 }
 
-// 2. Subdivide a rectangle so no sub-tile edge exceeds the per-axis max step.
-// Each axis is split into the fewest EQUAL segments whose length is <= its
-// max step, so pedestals land on every tile corner plus evenly-spaced interior
-// points on edges longer than the max. Pass `Infinity` for an axis to keep it
-// at corners only (used so only a tile's longer side gets intermediate points).
+function midpointSubdivisions(start, end, maxStep) {
+  if (!Number.isFinite(maxStep)) return [start, end]
+  if (Math.abs(end - start) <= maxStep + EPSILON) return [start, end]
+
+  const mid = (start + end) / 2
+  const left = midpointSubdivisions(start, mid, maxStep)
+  const right = midpointSubdivisions(mid, end, maxStep)
+  return [...left.slice(0, -1), ...right]
+}
+
+// 2. Subdivide a rectangle by repeatedly adding exact midpoints until no
+// adjacent pedestal spacing exceeds the max step.
 export function subdivideTileRect(x, y, w, h, maxStepX = 60, maxStepY = maxStepX) {
   const polygons = []
-  const cols = Math.max(1, Math.ceil(w / maxStepX - EPSILON))
-  const rows = Math.max(1, Math.ceil(h / maxStepY - EPSILON))
-  const stepX = w / cols
-  const stepY = h / rows
+  const xStops = midpointSubdivisions(x, x + w, maxStepX)
+  const yStops = midpointSubdivisions(y, y + h, maxStepY)
 
-  for (let r = 0; r < rows; r++) {
-    const rowY = y + r * stepY
-    for (let c = 0; c < cols; c++) {
-      const colX = x + c * stepX
+  for (let r = 0; r < yStops.length - 1; r++) {
+    const rowY = yStops[r]
+    const nextY = yStops[r + 1]
+    for (let c = 0; c < xStops.length - 1; c++) {
+      const colX = xStops[c]
+      const nextX = xStops[c + 1]
       polygons.push([
         [
           [colX, rowY],
-          [colX + stepX, rowY],
-          [colX + stepX, rowY + stepY],
-          [colX, rowY + stepY],
+          [nextX, rowY],
+          [nextX, nextY],
+          [colX, nextY],
           [colX, rowY],
         ],
       ])
@@ -80,6 +87,78 @@ export function findContainingTriangle(pt, triangles) {
 export function getXY(pt) {
   if (Array.isArray(pt)) return { x: pt[0], y: pt[1] }
   return pt
+}
+
+export function midpointSegmentPoints(a, b, maxStep) {
+  const start = getXY(a)
+  const end = getXY(b)
+  if (!start || !end) return []
+  const distance = Math.hypot(end.x - start.x, end.y - start.y)
+  if (!Number.isFinite(maxStep) || distance <= maxStep + EPSILON) {
+    return [
+      [start.x, start.y],
+      [end.x, end.y],
+    ]
+  }
+
+  const mid = {
+    x: (start.x + end.x) / 2,
+    y: (start.y + end.y) / 2,
+  }
+  const left = midpointSegmentPoints(start, mid, maxStep)
+  const right = midpointSegmentPoints(mid, end, maxStep)
+  return [...left.slice(0, -1), ...right]
+}
+
+export function fillLongPedestalSpans(pedestals, maxSpacing = 60, tolerance = 0.35) {
+  if (!Array.isArray(pedestals) || pedestals.length < 2) return pedestals || []
+
+  const result = [...pedestals]
+  const seen = new Set(result.map((p) => `${Number(p.x).toFixed(6)},${Number(p.y).toFixed(6)}`))
+
+  const addMidpoints = (a, b) => {
+    const distance = distanceBetweenPoints(a, b)
+    if (distance <= maxSpacing + EPSILON) return
+
+    const midpoint = {
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2,
+      height: ((a.height || 0) + (b.height || 0)) / 2,
+    }
+    const key = `${Number(midpoint.x).toFixed(6)},${Number(midpoint.y).toFixed(6)}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      result.push(midpoint)
+    }
+
+    addMidpoints(a, midpoint)
+    addMidpoints(midpoint, b)
+  }
+
+  const fillAxis = (fixedAxis, movingAxis) => {
+    const groups = new Map()
+    pedestals.forEach((pedestal) => {
+      const groupKey = Math.round(pedestal[fixedAxis] / tolerance)
+      if (!groups.has(groupKey)) groups.set(groupKey, [])
+      groups.get(groupKey).push(pedestal)
+    })
+
+    groups.forEach((group) => {
+      group.sort((a, b) => a[movingAxis] - b[movingAxis])
+      for (let i = 0; i < group.length - 1; i++) {
+        const a = group[i]
+        const b = group[i + 1]
+        if (Math.abs(a[fixedAxis] - b[fixedAxis]) <= tolerance) {
+          addMidpoints(a, b)
+        }
+      }
+    })
+  }
+
+  fillAxis('y', 'x')
+  fillAxis('x', 'y')
+
+  return result
 }
 
 function isCoordinatePair(point) {
@@ -168,8 +247,10 @@ export function getPerimeterPosition(point, polygon) {
   return best ? { ...best, perimeterLength: cumulative } : null
 }
 
-export function dedupeAndSnapPedestals(pedestals, polygon, tolerance = 0.35) {
+export function dedupeAndSnapPedestals(pedestals, polygon, tolerance = 0.35, options = {}) {
   if (!Array.isArray(pedestals) || pedestals.length === 0) return []
+
+  const { preserveAnchor = false } = options
 
   const normalized = pedestals.map((pedestal) => {
     const snappedVertex = getClosestPolygonVertex(pedestal, polygon, tolerance)
@@ -201,7 +282,7 @@ export function dedupeAndSnapPedestals(pedestals, polygon, tolerance = 0.35) {
       const cluster = clusters[foundIdx]
       cluster.members.push(pedestal)
       const snappedVertex = getClosestPolygonVertex(cluster.anchor, polygon, tolerance)
-      if (!snappedVertex) {
+      if (!snappedVertex && !preserveAnchor) {
         const count = cluster.members.length
         cluster.anchor = {
           x: (cluster.anchor.x * (count - 1) + pedestal.x) / count,
