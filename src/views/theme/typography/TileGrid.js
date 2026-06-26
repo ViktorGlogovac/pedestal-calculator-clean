@@ -6,8 +6,8 @@ import PropTypes from 'prop-types'
 import {
   findContainingTriangle,
   barycentricCoordinates,
+  midpointSegmentPoints,
   dedupeAndSnapPedestals,
-  fillLongPedestalSpans,
   findNearestPointIndex,
 } from '../../components/PedestalCalculator/geometryUtils'
 
@@ -27,6 +27,47 @@ const TILE_TYPES = [
 ]
 
 const EPSILON = 1e-6
+
+const ensureClosedRing = (ring) => {
+  if (!ring.length) return ring
+  const first = ring[0]
+  const last = ring[ring.length - 1]
+  if (first[0] === last[0] && first[1] === last[1]) return ring
+  return [...ring, first]
+}
+
+const extractOuterRings = (multiPolygon) =>
+  (Array.isArray(multiPolygon) ? multiPolygon : [])
+    .map((polygon) => polygon?.[0])
+    .filter((ring) => Array.isArray(ring) && ring.length >= 3)
+
+const extractBoundaryRings = (multiPolygon) =>
+  (Array.isArray(multiPolygon) ? multiPolygon : [])
+    .flatMap((polygon) => (Array.isArray(polygon) ? polygon : []))
+    .filter((ring) => Array.isArray(ring) && ring.length >= 3)
+
+const collapsePolygonState = (rings) => {
+  if (!rings.length) return []
+  return rings.length === 1 ? rings[0] : rings
+}
+
+const pointInRing = ([x, y], ring) => {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]
+    const [xj, yj] = ring[j]
+    const intersects = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi
+    if (intersects) inside = !inside
+  }
+  return inside
+}
+
+const pointInProjectGeometry = (point, geometry) =>
+  (Array.isArray(geometry) ? geometry : []).some((polygon) => {
+    const outer = polygon?.[0]
+    if (!Array.isArray(outer) || !pointInRing(point, outer)) return false
+    return !polygon.slice(1).some((hole) => pointInRing(point, hole))
+  })
 
 const getTileDimensions = (tile, unitSystem) => {
   if (unitSystem === 'imperial') {
@@ -206,32 +247,28 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
       return
     }
 
-    let mainPoly
-    if (additivePolygons.length === 1) {
-      mainPoly = additivePolygons[0].map((p) => [p.x, p.y])
-    } else {
-      const additivePolysFormatted = additivePolygons.map((poly) => [poly.map((p) => [p.x, p.y])])
-      const unionPoly = polygonClipping.union(...additivePolysFormatted)
-      if (unionPoly && unionPoly.length > 0 && unionPoly[0].length > 0) {
-        mainPoly = unionPoly[0][0]
-      }
-    }
+    const additivePolysFormatted = additivePolygons.map((poly) => [
+      ensureClosedRing(poly.map((p) => [p.x, p.y])),
+    ])
+    let projectGeometry = polygonClipping.union(...additivePolysFormatted)
 
     // 3. Apply subtractions
-    if (subtractivePolygons.length > 0 && mainPoly) {
-      const subtractPolysFormatted = subtractivePolygons.map((poly) => [poly])
-      const diffPoly = polygonClipping.difference([mainPoly], ...subtractPolysFormatted)
-      if (diffPoly && diffPoly.length > 0 && diffPoly[0].length > 0) {
-        mainPoly = diffPoly[0][0]
-      }
+    if (subtractivePolygons.length > 0 && projectGeometry?.length) {
+      const subtractPolysFormatted = subtractivePolygons.map((poly) => [ensureClosedRing(poly)])
+      projectGeometry = polygonClipping.difference(projectGeometry, ...subtractPolysFormatted)
     }
 
-    setUserPolygon(mainPoly || [])
+    const layoutPolygons = extractOuterRings(projectGeometry)
+    const boundaryRings = extractBoundaryRings(projectGeometry)
+    const userPolygonState = collapsePolygonState(layoutPolygons)
+
+    setUserPolygon(userPolygonState)
     const mainAddShape = points.find((shape) => shape.type === 'add' && shape.points.length)
     if (
       mainAddShape &&
       Array.isArray(mainAddShape.dimensionLabels) &&
-      mainAddShape.dimensionLabels.length === (mainPoly || []).length
+      layoutPolygons.length === 1 &&
+      mainAddShape.dimensionLabels.length === layoutPolygons[0].length
     ) {
       setDimensionLabels(mainAddShape.dimensionLabels)
     } else {
@@ -249,7 +286,7 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
       controlPoints.push(p)
     })
 
-    if (controlPoints.length < 3 || !mainPoly) {
+    if (controlPoints.length < 3 || layoutPolygons.length === 0) {
       setTiles([])
       setPedestals([])
       return
@@ -280,8 +317,8 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
       ;[tileWidthCm, tileHeightCm] = [tileHeightCm, tileWidthCm]
     }
 
-    // Pedestal on every tile corner, then repeatedly add exact midpoints on
-    // spans longer than the maximum allowed support spacing.
+    // Tile layout is independent from support placement. Supports are generated
+    // from deck/cutout boundaries plus a 60 cm interior grid.
     const createTilePiece = (px, py, w, h) => createTileRect(px, py, w, h)
     const xs = controlPoints.map((p) => p.x)
     const ys = controlPoints.map((p) => p.y)
@@ -298,19 +335,19 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
     }
 
     const newTiles = []
-    const newPedestals = []
-    const pedestalPositions = new Set()
-    const collectIntersectionPedestalPoints = (intersection) => {
-      const pointsByKey = new Map()
-      ;(intersection || []).forEach((polygon) => {
-        ;(polygon || []).forEach((ring) => {
-          if (!Array.isArray(ring) || ring.length < 2) return
-          ring.forEach(([px, py]) => {
-            pointsByKey.set(`${Number(px).toFixed(6)},${Number(py).toFixed(6)}`, [px, py])
-          })
-        })
-      })
-      return Array.from(pointsByKey.values())
+    const maxSupportSpacingCm = unitSystem === 'imperial' ? 60.96 : 60
+    const getPedestalHeight = (vx, vy) => {
+      const adjP = adjustedPedestals.find((p) => p.x === vx && p.y === vy)
+      if (adjP) return adjP.height
+
+      const tri = findContainingTriangle({ x: vx, y: vy }, triangles)
+      if (tri) {
+        const { l0, l1, l2 } = barycentricCoordinates(vx, vy, ...tri)
+        return l0 * tri[0].height + l1 * tri[1].height + l2 * tri[2].height
+      }
+
+      const nearestIndex = delaunay.find(vx, vy)
+      return controlPoints[nearestIndex].height
     }
 
     gridYPositions.forEach((y, rowIndex) => {
@@ -346,35 +383,9 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
         const mergedSubRectShape = []
 
         subRects.forEach((subRect) => {
-          const intersection = polygonClipping.intersection(subRect, [mainPoly])
+          const intersection = polygonClipping.intersection(subRect, projectGeometry)
           if (intersection.length > 0) {
             mergedSubRectShape.push(...intersection)
-
-            // For each clipped tile edge point, find pedestal height.
-            const vertices = collectIntersectionPedestalPoints(intersection)
-
-            vertices.forEach(([vx, vy]) => {
-              const key = `${vx},${vy}`
-              if (!pedestalPositions.has(key)) {
-                let height
-                const adjP = adjustedPedestals.find((p) => p.x === vx && p.y === vy)
-                if (adjP) {
-                  height = adjP.height
-                } else {
-                  const point = { x: vx, y: vy }
-                  const tri = findContainingTriangle(point, triangles)
-                  if (tri) {
-                    const { l0, l1, l2 } = barycentricCoordinates(vx, vy, ...tri)
-                    height = l0 * tri[0].height + l1 * tri[1].height + l2 * tri[2].height
-                  } else {
-                    const nearestIndex = delaunay.find(vx, vy)
-                    height = controlPoints[nearestIndex].height
-                  }
-                }
-                newPedestals.push({ x: vx, y: vy, height })
-                pedestalPositions.add(key)
-              }
-            })
           }
         })
 
@@ -390,45 +401,34 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
       }
     })
 
-    // Ensure a pedestal at every deck corner (polygon vertex) so heights written
-    // at corners attach to an actual corner pedestal instead of snapping to the
-    // nearest interior grid pedestal.
-    ;(mainPoly || []).forEach((vertex) => {
-      const vx = Array.isArray(vertex) ? vertex[0] : vertex?.x
-      const vy = Array.isArray(vertex) ? vertex[1] : vertex?.y
+    const supportPedestals = []
+    const supportPositions = new Set()
+    const addSupportPedestal = (vx, vy) => {
       if (!Number.isFinite(vx) || !Number.isFinite(vy)) return
-      const key = `${vx},${vy}`
-      if (pedestalPositions.has(key)) return
+      const key = `${Number(vx).toFixed(6)},${Number(vy).toFixed(6)}`
+      if (supportPositions.has(key)) return
+      supportPositions.add(key)
+      supportPedestals.push({ x: vx, y: vy, height: getPedestalHeight(vx, vy) })
+    }
 
-      let height
-      const adjP = adjustedPedestals.find((p) => p.x === vx && p.y === vy)
-      if (adjP) {
-        height = adjP.height
-      } else {
-        const tri = findContainingTriangle({ x: vx, y: vy }, triangles)
-        if (tri) {
-          const { l0, l1, l2 } = barycentricCoordinates(vx, vy, ...tri)
-          height = l0 * tri[0].height + l1 * tri[1].height + l2 * tri[2].height
-        } else {
-          const nearestIndex = delaunay.find(vx, vy)
-          height = controlPoints[nearestIndex].height
-        }
+    boundaryRings.forEach((polygon) => {
+      const closed = ensureClosedRing(polygon)
+      for (let i = 0; i < closed.length - 1; i++) {
+        midpointSegmentPoints(closed[i], closed[i + 1], maxSupportSpacingCm).forEach(([vx, vy]) => {
+          addSupportPedestal(vx, vy)
+        })
       }
-
-      newPedestals.push({ x: vx, y: vy, height })
-      pedestalPositions.add(key)
     })
 
-    const maxSupportSpacingCm = unitSystem === 'imperial' ? 60.96 : 60
-    const normalizedPedestals = dedupeAndSnapPedestals(newPedestals, mainPoly, 0.35, {
+    for (let x = minX; x <= maxX + EPSILON; x += maxSupportSpacingCm) {
+      for (let y = minY; y <= maxY + EPSILON; y += maxSupportSpacingCm) {
+        if (pointInProjectGeometry([x, y], projectGeometry)) addSupportPedestal(x, y)
+      }
+    }
+
+    const filledPedestals = dedupeAndSnapPedestals(supportPedestals, boundaryRings, 0.35, {
       preserveAnchor: true,
     })
-    const filledPedestals = dedupeAndSnapPedestals(
-      fillLongPedestalSpans(normalizedPedestals, maxSupportSpacingCm, 0.35),
-      mainPoly,
-      0.35,
-      { preserveAnchor: true },
-    )
 
     setTiles(newTiles)
     setPedestals(filledPedestals)
@@ -438,7 +438,7 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
       onDataCalculated({
         tiles: newTiles,
         pedestals: filledPedestals,
-        userPolygon: mainPoly,
+        userPolygon: userPolygonState,
         tileCount: newTiles.length,
       })
     }
