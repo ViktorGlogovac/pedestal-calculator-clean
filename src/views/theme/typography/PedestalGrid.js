@@ -13,6 +13,71 @@ const CELL_PHYSICAL_LENGTH = 100 // each grid cell = 100 cm
 const LINE_WIDTH = 2
 const POINT_RADIUS = 5
 
+const polygonArea = (points) => {
+  if (!Array.isArray(points) || points.length < 3) return 0
+  let area = 0
+  for (let i = 0; i < points.length; i += 1) {
+    const current = points[i]
+    const next = points[(i + 1) % points.length]
+    area += current.x * next.y - next.x * current.y
+  }
+  return Math.abs(area / 2)
+}
+
+const pointOnSegment = (point, start, end) => {
+  const cross = (point.x - start.x) * (end.y - start.y) - (point.y - start.y) * (end.x - start.x)
+  if (Math.abs(cross) > 0.35) return false
+  const dot = (point.x - start.x) * (end.x - start.x) + (point.y - start.y) * (end.y - start.y)
+  if (dot < -0.35) return false
+  const lengthSquared = (end.x - start.x) ** 2 + (end.y - start.y) ** 2
+  return dot <= lengthSquared + 0.35
+}
+
+const pointInOrOnPolygon = (point, polygon) => {
+  if (!Array.isArray(polygon) || polygon.length < 3) return false
+  if (polygon.some((vertex, index) => pointOnSegment(point, vertex, polygon[(index + 1) % polygon.length]))) {
+    return true
+  }
+
+  let inside = false
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const current = polygon[i]
+    const previous = polygon[j]
+    const intersects =
+      current.y > point.y !== previous.y > point.y &&
+      point.x < ((previous.x - current.x) * (point.y - current.y)) / (previous.y - current.y) + current.x
+    if (intersects) inside = !inside
+  }
+  return inside
+}
+
+const shapeIsInsideShape = (innerShape, outerShape) => {
+  if (!innerShape?.isLoopClosed || !outerShape?.isLoopClosed) return false
+  if (!Array.isArray(innerShape.points) || !Array.isArray(outerShape.points)) return false
+  if (innerShape.points.length < 3 || outerShape.points.length < 3) return false
+  if (polygonArea(innerShape.points) >= polygonArea(outerShape.points)) return false
+  return innerShape.points.every((point) => pointInOrOnPolygon(point, outerShape.points))
+}
+
+const classifyNestedCutouts = (shapes) => {
+  if (!Array.isArray(shapes)) return shapes
+  return shapes.map((shape, index) => {
+    if (!shape?.isLoopClosed || !Array.isArray(shape.points) || shape.points.length < 3) return shape
+    const isNested = shapes.some((candidate, candidateIndex) => {
+      if (candidateIndex === index) return false
+      return shapeIsInsideShape(shape, candidate)
+    })
+    const nextType = isNested ? 'sub' : shape.type
+    return nextType === shape.type ? shape : { ...shape, type: nextType }
+  })
+}
+
+const shapeTypesMatch = (a, b) =>
+  Array.isArray(a) &&
+  Array.isArray(b) &&
+  a.length === b.length &&
+  a.every((shape, index) => shape?.type === b[index]?.type)
+
 const PedestalGrid = ({
   onPointsChange,
   onGridSizeChange,
@@ -67,9 +132,16 @@ const PedestalGrid = ({
 
   // Zoom and panOffset are now managed by parent component, no need to save to localStorage
 
+  useEffect(() => {
+    const classifiedShapes = classifyNestedCutouts(shapes)
+    if (!shapeTypesMatch(shapes, classifiedShapes)) {
+      setShapes(classifiedShapes)
+    }
+  }, [shapes])
+
   // For hooking into onPointsChange
   useEffect(() => {
-    onPointsChange?.(shapes)
+    onPointsChange?.(classifyNestedCutouts(shapes))
   }, [shapes, onPointsChange])
 
   // Popup states (height, line-length)
