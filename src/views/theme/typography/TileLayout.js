@@ -6,8 +6,8 @@ import PropTypes from 'prop-types'
 import {
   findContainingTriangle,
   barycentricCoordinates,
-  midpointSegmentPoints,
   dedupeAndSnapPedestals,
+  fillLongPedestalSpans,
 } from '../../components/PedestalCalculator/geometryUtils'
 
 import TileCanvas from '../../components/PedestalCalculator/TileCanvas'
@@ -38,11 +38,6 @@ const ensureClosedRing = (ring) => {
 const extractOuterRings = (multiPolygon) =>
   (Array.isArray(multiPolygon) ? multiPolygon : [])
     .map((polygon) => polygon?.[0])
-    .filter((ring) => Array.isArray(ring) && ring.length >= 3)
-
-const extractBoundaryRings = (multiPolygon) =>
-  (Array.isArray(multiPolygon) ? multiPolygon : [])
-    .flatMap((polygon) => (Array.isArray(polygon) ? polygon : []))
     .filter((ring) => Array.isArray(ring) && ring.length >= 3)
 
 const collapsePolygonState = (rings) => {
@@ -102,13 +97,6 @@ const getTileIntersection = (subRect, geometry) => {
   }
   return polygonClipping.intersection(subRect, geometry)
 }
-
-const pointInProjectGeometry = (point, geometry) =>
-  (Array.isArray(geometry) ? geometry : []).some((polygon) => {
-    const outer = polygon?.[0]
-    if (!Array.isArray(outer) || !pointInRing(point, outer)) return false
-    return !polygon.slice(1).some((hole) => pointInRing(point, hole))
-  })
 
 const createTileRect = (x, y, w, h) => [
   [
@@ -299,7 +287,6 @@ const TileLayout = ({
     }
 
     const layoutPolygons = extractOuterRings(projectGeometry)
-    const boundaryRings = extractBoundaryRings(projectGeometry)
     const userPolygonState = collapsePolygonState(layoutPolygons)
 
     setUserPolygon(userPolygonState)
@@ -372,16 +359,19 @@ const TileLayout = ({
     }
 
     const newTiles = []
-    const maxSupportSpacingCm = unitSystem === 'imperial' ? 60.96 : 60
-    const getPedestalHeight = (vx, vy) => {
-      const point = { x: vx, y: vy }
-      const tri = findContainingTriangle(point, triangles)
-      if (tri) {
-        const { l0, l1, l2 } = barycentricCoordinates(vx, vy, ...tri)
-        return l0 * tri[0].height + l1 * tri[1].height + l2 * tri[2].height
-      }
-      const nearestIndex = delaunay.find(vx, vy)
-      return controlPoints[nearestIndex].height
+    const newPedestals = []
+    const pedestalPositions = new Set()
+    const collectIntersectionPedestalPoints = (intersection) => {
+      const pointsByKey = new Map()
+      ;(intersection || []).forEach((polygon) => {
+        ;(polygon || []).forEach((ring) => {
+          if (!Array.isArray(ring) || ring.length < 2) return
+          ring.forEach(([px, py]) => {
+            pointsByKey.set(`${Number(px).toFixed(6)},${Number(py).toFixed(6)}`, [px, py])
+          })
+        })
+      })
+      return Array.from(pointsByKey.values())
     }
 
     if (orientationState === 'portrait') {
@@ -414,6 +404,25 @@ const TileLayout = ({
               const intersection = getTileIntersection(subRect, projectGeometry)
               if (intersection.length > 0) {
                 mergedSubRectShape.push(...intersection)
+                // For each clipped tile edge point, find pedestal height.
+                const vertices = collectIntersectionPedestalPoints(intersection)
+                vertices.forEach(([vx, vy]) => {
+                  const key = `${vx},${vy}`
+                  if (!pedestalPositions.has(key)) {
+                    let height
+                    const point = { x: vx, y: vy }
+                    const tri = findContainingTriangle(point, triangles)
+                    if (tri) {
+                      const { l0, l1, l2 } = barycentricCoordinates(vx, vy, ...tri)
+                      height = l0 * tri[0].height + l1 * tri[1].height + l2 * tri[2].height
+                    } else {
+                      const nearestIndex = delaunay.find(vx, vy)
+                      height = controlPoints[nearestIndex].height
+                    }
+                    newPedestals.push({ x: vx, y: vy, height })
+                    pedestalPositions.add(key)
+                  }
+                })
               }
             })
             if (mergedSubRectShape.length > 0) {
@@ -440,6 +449,27 @@ const TileLayout = ({
             const intersection = getTileIntersection(subRect, projectGeometry)
             if (intersection.length > 0) {
               mergedSubRectShape.push(...intersection)
+
+              // For each clipped tile edge point, find pedestal height.
+              const vertices = collectIntersectionPedestalPoints(intersection)
+
+              vertices.forEach(([vx, vy]) => {
+                const key = `${vx},${vy}`
+                if (!pedestalPositions.has(key)) {
+                  let height
+                  const point = { x: vx, y: vy }
+                  const tri = findContainingTriangle(point, triangles)
+                  if (tri) {
+                    const { l0, l1, l2 } = barycentricCoordinates(vx, vy, ...tri)
+                    height = l0 * tri[0].height + l1 * tri[1].height + l2 * tri[2].height
+                  } else {
+                    const nearestIndex = delaunay.find(vx, vy)
+                    height = controlPoints[nearestIndex].height
+                  }
+                  newPedestals.push({ x: vx, y: vy, height })
+                  pedestalPositions.add(key)
+                }
+              })
             }
           })
 
@@ -483,6 +513,27 @@ const TileLayout = ({
             const intersection = getTileIntersection(subRect, projectGeometry)
             if (intersection.length > 0) {
               mergedSubRectShape.push(...intersection)
+
+              // For each clipped tile edge point, find pedestal height.
+              const vertices = collectIntersectionPedestalPoints(intersection)
+
+              vertices.forEach(([vx, vy]) => {
+                const key = `${vx},${vy}`
+                if (!pedestalPositions.has(key)) {
+                  let height
+                  const point = { x: vx, y: vy }
+                  const tri = findContainingTriangle(point, triangles)
+                  if (tri) {
+                    const { l0, l1, l2 } = barycentricCoordinates(vx, vy, ...tri)
+                    height = l0 * tri[0].height + l1 * tri[1].height + l2 * tri[2].height
+                  } else {
+                    const nearestIndex = delaunay.find(vx, vy)
+                    height = controlPoints[nearestIndex].height
+                  }
+                  newPedestals.push({ x: vx, y: vy, height })
+                  pedestalPositions.add(key)
+                }
+              })
             }
           })
 
@@ -499,43 +550,42 @@ const TileLayout = ({
       })
     }
 
-    const supportPedestals = []
-    const supportPositions = new Set()
-    const addSupportPedestal = (vx, vy) => {
-      if (!Number.isFinite(vx) || !Number.isFinite(vy)) return
-      const key = `${Number(vx).toFixed(6)},${Number(vy).toFixed(6)}`
-      if (supportPositions.has(key)) return
-      supportPositions.add(key)
-      supportPedestals.push({ x: vx, y: vy, height: getPedestalHeight(vx, vy) })
-    }
-
-    boundaryRings.forEach((polygon) => {
-      const closed = ensureClosedRing(polygon)
-      for (let i = 0; i < closed.length - 1; i++) {
-        midpointSegmentPoints(closed[i], closed[i + 1], maxSupportSpacingCm).forEach(([vx, vy]) => {
-          addSupportPedestal(vx, vy)
-        })
-      }
-    })
-
-    for (let x = minX; x <= maxX + EPSILON; x += maxSupportSpacingCm) {
-      for (let y = minY; y <= maxY + EPSILON; y += maxSupportSpacingCm) {
-        if (pointInProjectGeometry([x, y], projectGeometry)) addSupportPedestal(x, y)
-      }
-    }
-
-    boundaryRings.forEach((polygon) => {
+    // Tile clipping does not always create a vertex pedestal at every deck
+    // corner. Add those explicitly so AI height anchors at known polygon
+    // vertices have an exact pedestal to attach to.
+    layoutPolygons.forEach((polygon) => {
       polygon.forEach(([vx, vy]) => {
         if (!Number.isFinite(vx) || !Number.isFinite(vy)) return
-        addSupportPedestal(vx, vy)
+        const key = `${vx},${vy}`
+        if (pedestalPositions.has(key)) return
+
+        let height
+        const tri = findContainingTriangle({ x: vx, y: vy }, triangles)
+        if (tri) {
+          const { l0, l1, l2 } = barycentricCoordinates(vx, vy, ...tri)
+          height = l0 * tri[0].height + l1 * tri[1].height + l2 * tri[2].height
+        } else {
+          const nearestIndex = delaunay.find(vx, vy)
+          height = controlPoints[nearestIndex].height
+        }
+
+        newPedestals.push({ x: vx, y: vy, height })
+        pedestalPositions.add(key)
       })
     })
 
     setTiles(newTiles)
 
-    const filledPedestals = dedupeAndSnapPedestals(supportPedestals, boundaryRings, 0.35, {
+    const maxSupportSpacingCm = unitSystem === 'imperial' ? 60.96 : 60
+    const mergedPedestals = dedupeAndSnapPedestals(newPedestals, userPolygonState, 0.35, {
       preserveAnchor: true,
     })
+    const filledPedestals = dedupeAndSnapPedestals(
+      fillLongPedestalSpans(mergedPedestals, maxSupportSpacingCm, 0.35),
+      userPolygonState,
+      0.35,
+      { preserveAnchor: true },
+    )
     setPedestals(filledPedestals)
 
     // Callback with data if needed
