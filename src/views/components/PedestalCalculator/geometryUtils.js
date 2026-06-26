@@ -110,11 +110,12 @@ export function midpointSegmentPoints(a, b, maxStep) {
   return [...left.slice(0, -1), ...right]
 }
 
-export function fillLongPedestalSpans(pedestals, maxSpacing = 60, tolerance = 0.35) {
+export function fillLongPedestalSpans(pedestals, maxSpacing = 60, tolerance = 0.35, options = {}) {
   if (!Array.isArray(pedestals) || pedestals.length < 2) return pedestals || []
 
   const result = [...pedestals]
   const seen = new Set(result.map((p) => `${Number(p.x).toFixed(6)},${Number(p.y).toFixed(6)}`))
+  const isSpanValid = typeof options.isSpanValid === 'function' ? options.isSpanValid : () => true
 
   const addMidpoints = (a, b) => {
     const distance = distanceBetweenPoints(a, b)
@@ -125,6 +126,8 @@ export function fillLongPedestalSpans(pedestals, maxSpacing = 60, tolerance = 0.
       y: (a.y + b.y) / 2,
       height: ((a.height || 0) + (b.height || 0)) / 2,
     }
+    if (!isSpanValid(a, b, midpoint)) return
+
     const key = `${Number(midpoint.x).toFixed(6)},${Number(midpoint.y).toFixed(6)}`
     if (!seen.has(key)) {
       seen.add(key)

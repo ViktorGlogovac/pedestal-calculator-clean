@@ -56,6 +56,37 @@ const pointInRing = ([x, y], ring) => {
   return inside
 }
 
+const pointOnSegment = ([x, y], [x1, y1], [x2, y2]) => {
+  const cross = (x - x1) * (y2 - y1) - (y - y1) * (x2 - x1)
+  if (Math.abs(cross) > 0.35) return false
+  const dot = (x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)
+  if (dot < -0.35) return false
+  const lengthSquared = (x2 - x1) ** 2 + (y2 - y1) ** 2
+  return dot <= lengthSquared + 0.35
+}
+
+const pointOnRing = (point, ring) =>
+  ring.some((vertex, index) => pointOnSegment(point, vertex, ring[(index + 1) % ring.length]))
+
+const pointInOrOnRing = (point, ring) => pointOnRing(point, ring) || pointInRing(point, ring)
+
+const pointInProjectGeometry = ([x, y], geometry) => {
+  if (!Array.isArray(geometry) || !Number.isFinite(x) || !Number.isFinite(y)) return false
+  const half = 0.05
+  const probe = [
+    [
+      [
+        [x - half, y - half],
+        [x + half, y - half],
+        [x + half, y + half],
+        [x - half, y + half],
+        [x - half, y - half],
+      ],
+    ],
+  ]
+  return polygonClipping.intersection(probe, geometry).length > 0
+}
+
 const orientation = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
 
 const segmentsIntersect = (a, b, c, d) => {
@@ -579,13 +610,19 @@ const TileLayout = ({
     const maxSupportSpacingCm = unitSystem === 'imperial' ? 60.96 : 60
     const mergedPedestals = dedupeAndSnapPedestals(newPedestals, userPolygonState, 0.35, {
       preserveAnchor: true,
-    })
+    }).filter((pedestal) => pointInProjectGeometry([pedestal.x, pedestal.y], projectGeometry))
+    const spanInsideProjectGeometry = (a, b) =>
+      [0.25, 0.5, 0.75].every((ratio) =>
+        pointInProjectGeometry([a.x + (b.x - a.x) * ratio, a.y + (b.y - a.y) * ratio], projectGeometry),
+      )
     const filledPedestals = dedupeAndSnapPedestals(
-      fillLongPedestalSpans(mergedPedestals, maxSupportSpacingCm, 0.35),
+      fillLongPedestalSpans(mergedPedestals, maxSupportSpacingCm, 0.35, {
+        isSpanValid: spanInsideProjectGeometry,
+      }),
       userPolygonState,
       0.35,
       { preserveAnchor: true },
-    )
+    ).filter((pedestal) => pointInProjectGeometry([pedestal.x, pedestal.y], projectGeometry))
     setPedestals(filledPedestals)
 
     // Callback with data if needed

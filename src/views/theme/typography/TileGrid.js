@@ -28,6 +28,48 @@ const TILE_TYPES = [
 
 const EPSILON = 1e-6
 
+const pointInRing = ([x, y], ring) => {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i]
+    const [xj, yj] = ring[j]
+    const intersects = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi
+    if (intersects) inside = !inside
+  }
+  return inside
+}
+
+const pointOnSegment = ([x, y], [x1, y1], [x2, y2]) => {
+  const cross = (x - x1) * (y2 - y1) - (y - y1) * (x2 - x1)
+  if (Math.abs(cross) > 0.35) return false
+  const dot = (x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)
+  if (dot < -0.35) return false
+  const lengthSquared = (x2 - x1) ** 2 + (y2 - y1) ** 2
+  return dot <= lengthSquared + 0.35
+}
+
+const pointOnRing = (point, ring) =>
+  ring.some((vertex, index) => pointOnSegment(point, vertex, ring[(index + 1) % ring.length]))
+
+const pointInOrOnRing = (point, ring) => pointOnRing(point, ring) || pointInRing(point, ring)
+
+const pointInPolygonGeometry = ([x, y], polygon) => {
+  if (!Array.isArray(polygon) || !Number.isFinite(x) || !Number.isFinite(y)) return false
+  const half = 0.05
+  const probe = [
+    [
+      [
+        [x - half, y - half],
+        [x + half, y - half],
+        [x + half, y + half],
+        [x - half, y + half],
+        [x - half, y - half],
+      ],
+    ],
+  ]
+  return polygonClipping.intersection(probe, [[polygon]]).length > 0
+}
+
 const getTileDimensions = (tile, unitSystem) => {
   if (unitSystem === 'imperial') {
     return {
@@ -422,13 +464,19 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
     const maxSupportSpacingCm = unitSystem === 'imperial' ? 60.96 : 60
     const normalizedPedestals = dedupeAndSnapPedestals(newPedestals, mainPoly, 0.35, {
       preserveAnchor: true,
-    })
+    }).filter((pedestal) => pointInPolygonGeometry([pedestal.x, pedestal.y], mainPoly))
+    const spanInsideMainPolygon = (a, b) =>
+      [0.25, 0.5, 0.75].every((ratio) =>
+        pointInPolygonGeometry([a.x + (b.x - a.x) * ratio, a.y + (b.y - a.y) * ratio], mainPoly),
+      )
     const filledPedestals = dedupeAndSnapPedestals(
-      fillLongPedestalSpans(normalizedPedestals, maxSupportSpacingCm, 0.35),
+      fillLongPedestalSpans(normalizedPedestals, maxSupportSpacingCm, 0.35, {
+        isSpanValid: spanInsideMainPolygon,
+      }),
       mainPoly,
       0.35,
       { preserveAnchor: true },
-    )
+    ).filter((pedestal) => pointInPolygonGeometry([pedestal.x, pedestal.y], mainPoly))
 
     setTiles(newTiles)
     setPedestals(filledPedestals)
