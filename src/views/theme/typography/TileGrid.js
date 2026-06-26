@@ -4,11 +4,10 @@ import polygonClipping from 'polygon-clipping'
 import PropTypes from 'prop-types'
 
 import {
-  pointInTriangle,
   findContainingTriangle,
   barycentricCoordinates,
-  subdivideTileRect,
   dedupeAndSnapPedestals,
+  fillLongPedestalSpans,
   findNearestPointIndex,
 } from '../../components/PedestalCalculator/geometryUtils'
 
@@ -38,6 +37,18 @@ const getTileDimensions = (tile, unitSystem) => {
   }
   return { width: tile.width, height: tile.height }
 }
+
+const createTileRect = (x, y, w, h) => [
+  [
+    [
+      [x, y],
+      [x + w, y],
+      [x + w, y + h],
+      [x, y + h],
+      [x, y],
+    ],
+  ],
+]
 
 const mergeTileShape = (shape) => {
   if (!Array.isArray(shape) || shape.length <= 1) return shape
@@ -269,29 +280,9 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
       ;[tileWidthCm, tileHeightCm] = [tileHeightCm, tileWidthCm]
     }
 
-    // Pedestal on every tile corner plus intermediate points on long edges.
-    // Most full slabs use ~60 cm (24 in) spacing; narrow 30x120 / 12x48 slabs
-    // use thirds only for 1/3 offset; 1/2 offset keeps the standard center support.
-    const spacingCm = unitSystem === 'imperial' ? 60.96 : 60
-    const subdivideTilePiece = (px, py, w, h) => {
-      const isFullTile = w >= tileWidthCm - EPSILON && h >= tileHeightCm - EPSILON
-      if (selectedTileTypeState.id === 'tile30-120') {
-        const longEdgeStep =
-          isOffsetState === 'third' ? Math.max(tileWidthCm, tileHeightCm) / 3 : spacingCm
-        return subdivideTileRect(
-          px,
-          py,
-          tileWidthCm > tileHeightCm ? tileWidthCm : w,
-          tileHeightCm > tileWidthCm ? tileHeightCm : h,
-          tileWidthCm > tileHeightCm ? longEdgeStep : Infinity,
-          tileHeightCm > tileWidthCm ? longEdgeStep : Infinity,
-        )
-      }
-
-      if (!isFullTile) return subdivideTileRect(px, py, w, h, Infinity)
-
-      return subdivideTileRect(px, py, w, h, spacingCm)
-    }
+    // Pedestal on every tile corner, then repeatedly add exact midpoints on
+    // spans longer than the maximum allowed support spacing.
+    const createTilePiece = (px, py, w, h) => createTileRect(px, py, w, h)
     const xs = controlPoints.map((p) => p.x)
     const ys = controlPoints.map((p) => p.y)
     const minX = Math.min(...xs)
@@ -309,6 +300,18 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
     const newTiles = []
     const newPedestals = []
     const pedestalPositions = new Set()
+    const collectIntersectionPedestalPoints = (intersection) => {
+      const pointsByKey = new Map()
+      ;(intersection || []).forEach((polygon) => {
+        ;(polygon || []).forEach((ring) => {
+          if (!Array.isArray(ring) || ring.length < 2) return
+          ring.forEach(([px, py]) => {
+            pointsByKey.set(`${Number(px).toFixed(6)},${Number(py).toFixed(6)}`, [px, py])
+          })
+        })
+      })
+      return Array.from(pointsByKey.values())
+    }
 
     gridYPositions.forEach((y, rowIndex) => {
       /* ---------- 1. absolute row number ---------- */
@@ -339,7 +342,7 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
         const curTileH = Math.min(tileHeightCm, maxY - y)
         if (curTileW <= 0 || curTileH <= 0) continue
 
-        const subRects = subdivideTilePiece(x, y, curTileW, curTileH)
+        const subRects = createTilePiece(x, y, curTileW, curTileH)
         const mergedSubRectShape = []
 
         subRects.forEach((subRect) => {
@@ -347,16 +350,8 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
           if (intersection.length > 0) {
             mergedSubRectShape.push(...intersection)
 
-            // For each vertex, find pedestal height
-            const flattened = intersection.flat(2)
-            const verticesSet = new Set()
-            flattened.forEach(([px, py]) => {
-              verticesSet.add(`${px},${py}`)
-            })
-            const vertices = Array.from(verticesSet).map((k) => {
-              const [vx, vy] = k.split(',').map(Number)
-              return [vx, vy]
-            })
+            // For each clipped tile edge point, find pedestal height.
+            const vertices = collectIntersectionPedestalPoints(intersection)
 
             vertices.forEach(([vx, vy]) => {
               const key = `${vx},${vy}`
@@ -424,16 +419,25 @@ const TileGridArchitectUI = ({ points, gridSize, unitSystem, onDataCalculated })
       pedestalPositions.add(key)
     })
 
-    const normalizedPedestals = dedupeAndSnapPedestals(newPedestals, mainPoly)
+    const maxSupportSpacingCm = unitSystem === 'imperial' ? 60.96 : 60
+    const normalizedPedestals = dedupeAndSnapPedestals(newPedestals, mainPoly, 0.35, {
+      preserveAnchor: true,
+    })
+    const filledPedestals = dedupeAndSnapPedestals(
+      fillLongPedestalSpans(normalizedPedestals, maxSupportSpacingCm, 0.35),
+      mainPoly,
+      0.35,
+      { preserveAnchor: true },
+    )
 
     setTiles(newTiles)
-    setPedestals(normalizedPedestals)
+    setPedestals(filledPedestals)
 
     // Callback with data if needed
     if (onDataCalculated) {
       onDataCalculated({
         tiles: newTiles,
-        pedestals: normalizedPedestals,
+        pedestals: filledPedestals,
         userPolygon: mainPoly,
         tileCount: newTiles.length,
       })
