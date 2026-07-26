@@ -1,9 +1,11 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import PropTypes from 'prop-types'
 import Modal, { ModalHeader, ModalBody, ModalFooter } from '../../../components/Modal'
-import { analyzeSketch } from '../../../lib/sketchApi'
+import { analyzeSketch, BACKEND_ORIGIN } from '../../../lib/sketchApi'
 
-const BACKEND_BASE = 'http://localhost:3001'
+// Debug images are served by the backend as `/uploads/...`. On localhost the
+// Vite proxy handles that; in production they must resolve against Cloud Run.
+const BACKEND_BASE = BACKEND_ORIGIN
 const IMPORT_STEPS = [
   { id: 'units', label: 'Units' },
   { id: 'plan', label: 'Deck Plan' },

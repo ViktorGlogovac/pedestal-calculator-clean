@@ -46,6 +46,12 @@ export default defineConfig(() => {
           target: 'http://localhost:3001',
           changeOrigin: true,
         },
+        // Debug images returned by the sketch pipeline are served from the
+        // backend's static /uploads mount.
+        '/uploads': {
+          target: 'http://localhost:3001',
+          changeOrigin: true,
+        },
       },
     },
   }

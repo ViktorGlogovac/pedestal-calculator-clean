@@ -223,4 +223,4 @@ async function checkServerHealth() {
   }
 }
 
-export { analyzeSketch, withNotes, getDebugData, checkServerHealth }
+export { analyzeSketch, withNotes, getDebugData, checkServerHealth, BACKEND_ORIGIN }
